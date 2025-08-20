@@ -25,7 +25,7 @@ async function run() {
 run().catch(console.error);                        // 👈 make sure run() is called
 
 const app = express();
-const PORT = process.env.PORT || 3000;             // 👈 Azure injects PORT
+const PORT = process.env.PORT || 8080;             // 👈 Azure injects PORT
 
 // Middleware
 app.use(cors());

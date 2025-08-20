@@ -1,17 +1,22 @@
 {
-  "name": "edutalk-webapp",
+  "name": "apivideoshare",
   "version": "1.0.0",
-  "description": "Simple Node + static frontend for Azure App Service",
+  "description": "Video sharing API deployed on Azure App Service with MongoDB Atlas",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18.x"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "mongodb": "^6.6.2"
-  }
+    "mongoose": "^7.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "license": "MIT"
 }

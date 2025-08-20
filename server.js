@@ -1,5 +1,7 @@
 // server.js
 // Simple Node.js + Express app for Azure App Service with MongoDB Atlas
+const port = process.env.PORT || 8080;   // must accept Azure's PORT
+
 
 const express = require("express");
 const path = require("path");

@@ -1,80 +1,72 @@
 // server.js
-// Simple Node + Express app for Azure App Service with MongoDB (Mongoose)
+// Simple Node.js + Express app for Azure App Service with MongoDB Atlas
 
 const express = require("express");
-const mongoose = require("mongoose");
 const path = require("path");
+const cors = require("cors");
+const mongoose = require("mongoose");
 
+// ----- App & Middleware -----
 const app = express();
-
-// Azure gives you a dynamic port in process.env.PORT
-const PORT = process.env.PORT || 8080;
-
-// Parse JSON bodies
+app.use(cors());
 app.use(express.json());
 
-// Serve the static frontend (public folder)
-app.use(express.static(path.join(__dirname, "public")));
+// ----- Configuration -----
+const PORT = process.env.PORT || 8080; // Azure injects PORT -> DO NOT hardcode 3000
+const MONGO_URI = process.env.MONGO_URI; // Set this in Azure: App Service -> Environment variables
 
-// ----- MongoDB connection -----
-// Make sure you have set MONGO_URI in Azure App Service > Environment variables
-const mongoUri = process.env.MONGO_URI;
+// ----- MongoDB Connection -----
+let dbStatus = "not_connected";
 
-if (!mongoUri) {
-  console.warn("⚠️  No MONGO_URI environment variable found. Skipping DB connection.");
-} else {
-  mongoose
-    .connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("✅ Connected to MongoDB"))
-    .catch((err) => console.error("❌ MongoDB connection error:", err));
+async function connectDB() {
+  if (!MONGO_URI) {
+    console.error("MONGO_URI is not set in environment variables.");
+    dbStatus = "missing_uri";
+    return;
+  }
+
+  try {
+    await mongoose.connect(MONGO_URI, {
+      serverApi: { version: "1", strict: true, deprecationErrors: true },
+    });
+    await mongoose.connection.db.admin().command({ ping: 1 });
+    dbStatus = "connected";
+    console.log("✅ Connected to MongoDB Atlas!");
+  } catch (err) {
+    dbStatus = "connection_error";
+    console.error("❌ MongoDB connection error:", err.message);
+  }
 }
 
-// Example schema (optional, just to prove DB works)
-// You can remove this section if you don’t need it yet.
-const PingSchema = new mongoose.Schema(
-  { at: { type: Date, default: Date.now } },
-  { collection: "pings" }
-);
-const Ping = mongoose.models.Ping || mongoose.model("Ping", PingSchema);
+// Kick off the connection (non-blocking)
+connectDB();
 
-// ----- API routes -----
-
-// Health/API demo route
-app.get("/api/hello", async (req, res) => {
-  try {
-    if (mongoose.connection.readyState === 1) {
-      // if connected, write a tiny doc just to test
-      await Ping.create({});
-      return res.json({
-        ok: true,
-        message: "Hello from Edutalk API + MongoDB!",
-        db: "connected",
-      });
-    }
-    return res.json({
-      ok: true,
-      message: "Hello from Edutalk API!",
-      db: "not_connected",
-    });
-  } catch (err) {
-    console.error("API error:", err);
-    res.status(500).json({ ok: false, error: "Internal Server Error" });
-  }
-});
-
-// ----- Fallback routes -----
-
-// (Optional) sample route used by your button in index.html
+// ----- Example API -----
 app.get("/api/hello", (req, res) => {
-  res.json({ message: "Hello from Edutalk WebApp API!" });
+  res.json({
+    message: "Hello from Edutalk WebApp API!",
+    db: dbStatus,
+  });
 });
 
-// For any other request, serve the SPA/landing page
+// ----- Serve Frontend (static files) -----
+app.use(express.static(path.join(__dirname, "public")));
+
+// Fallback to index.html for any other route (SPA support)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ----- Start the server -----
+// ----- Start server -----
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+});
+
+// Graceful shutdown (optional)
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received. Closing server...");
+  mongoose.connection.close(false, () => {
+    console.log("Mongo connection closed.");
+    process.exit(0);
+  });
 });

@@ -1,6 +1,6 @@
 const { MongoClient, ServerApiVersion } = require('mongodb');
 
-const uri = "mongodb+srv://edutalkUser:MyPass123@edutalk-cluster.n8jlomv.mongodb.net/edutalk?retryWrites=true&w=majority&appName=edutalk-cluster";
+const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
   serverApi: {

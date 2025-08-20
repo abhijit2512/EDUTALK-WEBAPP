@@ -4,14 +4,14 @@
   "description": "Simple Node + static frontend for Azure App Service",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "echo \"No tests\" && exit 0"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18.x"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "mongodb": "^6.6.2"
   }
 }

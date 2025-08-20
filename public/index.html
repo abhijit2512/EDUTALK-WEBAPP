@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edutalk WebApp</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    h1 { color: #0078d7; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Welcome to Edutalk WebApp</h1>
+  <p>This is a simple Node.js + Azure Web App deployment.</p>
+  <button onclick="callApi()">Call API</button>
+  <p id="result"></p>
+
+  <script>
+    async function callApi() {
+      const res = await fetch('/api/hello');
+      const data = await res.json();
+      document.getElementById('result').innerText = data.message;
+    }
+  </script>
+</body>
+</html>

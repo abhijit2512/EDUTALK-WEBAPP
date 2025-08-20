@@ -1,3 +1,26 @@
+const { MongoClient, ServerApiVersion } = require('mongodb');
+
+const uri = "mongodb+srv://edutalkUser:MyPass123@edutalk-cluster.n8jlomv.mongodb.net/edutalk?retryWrites=true&w=majority&appName=edutalk-cluster";
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+async function run() {
+  try {
+    await client.connect();
+    console.log("✅ Connected to MongoDB Atlas!");
+  } catch (err) {
+    console.error("❌ Connection failed:", err);
+  }
+}
+
+run();
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");

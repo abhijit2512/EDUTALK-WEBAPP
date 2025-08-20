@@ -1,86 +1,69 @@
 // server.js
-// Simple Node.js + Express app for Azure App Service with MongoDB Atlas
+// Express app for Azure App Service with MongoDB Atlas
 
-// ----- Imports -----
-const express  = require("express");
-const cors     = require("cors");
-const path     = require("path");
+const express = require("express");
 const mongoose = require("mongoose");
+const cors = require("cors");
+const path = require("path");
 
-// ----- App & Middleware -----
 const app = express();
+const PORT = process.env.PORT || 8080;
+
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// ----- Configuration -----
-// Azure injects PORT. Do NOT hardcode 3000/8080; just use the env var with a dev fallback.
-const PORT      = process.env.PORT || 8080;
-const MONGO_URI = process.env.MONGO_URI; // set this in Azure → App Service → Environment variables
+// MongoDB connection URI (from environment variables in Azure)
+const MONGO_URI = process.env.MONGO_URI;
 
-// ----- MongoDB connection (non-blocking) -----
-let dbStatus = "not_connected";
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI is not defined in environment variables!");
+  process.exit(1);
+}
 
+// MongoDB Connection
 async function connectDB() {
-  if (!MONGO_URI) {
-    console.warn("⚠️  MONGO_URI is not set in environment variables.");
-    dbStatus = "missing_uri";
-    return;
-  }
-
   try {
     await mongoose.connect(MONGO_URI, {
-      serverApi: { version: "1", strict: true, deprecationErrors: true },
-      // You can add options below if needed
-      // dbName: "<optional-db-name>"
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
     });
-
-    // Optional sanity ping
-    await mongoose.connection.db.admin().command({ ping: 1 });
-
-    dbStatus = "connected";
-    console.log("✅ Connected to MongoDB Atlas!");
+    console.log("✅ Connected to MongoDB Atlas");
   } catch (err) {
-    dbStatus = "connection_error";
-    console.error("❌ MongoDB connection error:", err?.message || err);
+    console.error("❌ MongoDB connection error:", err.message);
+    process.exit(1);
   }
 }
+connectDB();
 
-// ----- Routes -----
-// Simple API hello
-app.get("/api/hello", (req, res) => {
-  res.json({ message: "Hello from Edutalk WebApp API!", db: dbStatus });
+// --- Routes ---
+
+// Root route (for Azure App Service startup check)
+app.get("/", (req, res) => {
+  res.send("🚀 API VideoShare backend is running successfully!");
 });
 
-// Basic ping route; returns DB status
-app.get("/api/ping", (req, res) => {
-  res.json({ ok: true, db: dbStatus, time: new Date().toISOString() });
+// Health check endpoint (used by Azure & monitoring)
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
-// ----- Serve frontend (static files) -----
+// Example API route (expand later for video data)
+app.get("/api/videos", (req, res) => {
+  res.json({ message: "Video list will go here" });
+});
+
+// Serve static files (public folder)
 app.use(express.static(path.join(__dirname, "public")));
 
-// Fallback to index.html for any other (non-API) route
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// ----- Start server (important: always start listening) -----
-const server = app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  // Kick off DB connect after server is up, so the app still responds even if DB is down
-  connectDB();
+// Graceful shutdown
+process.on("SIGINT", async () => {
+  console.log("⚠️ Shutting down server...");
+  await mongoose.disconnect();
+  process.exit(0);
 });
-
-// ----- Graceful shutdown (optional) -----
-function shutdown() {
-  console.log("⬇️  Shutting down...");
-  mongoose.connection.close(false, () => {
-    console.log("🔌 MongoDB connection closed.");
-    server.close(() => {
-      console.log("🛑 HTTP server closed. Bye!");
-      process.exit(0);
-    });
-  });
-}
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);

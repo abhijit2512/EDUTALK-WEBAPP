@@ -1,3 +1,10 @@
+const express = require("express");
+const app = express();
+
+const PORT = process.env.PORT || 8080;  // Azure injects PORT env variable
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const express = require('express');
 const cors = require('cors');

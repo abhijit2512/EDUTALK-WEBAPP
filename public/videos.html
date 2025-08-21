@@ -4,17 +4,23 @@
   <meta charset="utf-8" />
   <title>Latest Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=6" />
+  <link rel="stylesheet" href="/style.css?v=7" />
   <style>
     /* small, local tweaks that won’t fight your style.css */
     .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0 14px; }
     .toolbar input[type="search"]{ padding:8px 10px; border:1px solid #20314f; background:#0a0f20; color:#e8eefc; border-radius:8px; min-width:240px; }
-    .toolbar .btn { padding:8px 12px; background:#1a3a8a; color:#fff; border-radius:8px; text-decoration:none; display:inline-flex; gap:6px; align-items:center; }
+    .toolbar .btn { padding:8px 12px; background:#1a3a8a; color:#fff; border-radius:8px; text-decoration:none; display:inline-flex; gap:6px; align-items:center; border:none; cursor:pointer; }
+    .toolbar .btn.danger { background:#9b1c1c; }
     .meta { display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }
     .badge { font-size:12px; padding:2px 8px; background:#13213b; color:#a9b6d3; border-radius:999px; }
+    .badge.youtube { background:#35213b; color:#f0b7ff; }
     .muted-sm { color:#9aa3b2; font-size:12px; }
     .player { width:100%; aspect-ratio:16/9; background:#0a0f20; border-radius:12px; }
     .empty { color:#9aa3b2; padding:16px 0; }
+    .card-head { display:flex; gap:8px; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .row-actions { display:flex; gap:8px; align-items:center; }
+    .row-actions .btn { padding:6px 10px; font-size:13px; }
+    .row-actions .btn.danger { background:#8a1a1a; }
   </style>
 </head>
 <body>
@@ -35,6 +41,9 @@
       <div class="toolbar">
         <input id="q" type="search" placeholder="Search title, publisher, genre…" />
         <button id="sortBtn" class="btn" type="button" aria-label="Toggle sort order">Sort: Newest ↓</button>
+        <button id="delYT" class="btn danger" type="button" title="Remove all videos that are YouTube links">
+          Delete all YouTube links
+        </button>
         <span id="status" class="muted"></span>
       </div>
 
@@ -115,13 +124,19 @@
         v.publisher && `<span class="badge">Publisher: ${esc(v.publisher)}</span>`,
         v.producer  && `<span class="badge">Producer: ${esc(v.producer)}</span>`,
         v.genre     && `<span class="badge">Genre: ${esc(v.genre)}</span>`,
-        v.age       && `<span class="badge">Age: ${esc(v.age)}</span>`
+        v.age       && `<span class="badge">Age: ${esc(v.age)}</span>`,
+        youId       && `<span class="badge youtube">YouTube</span>`
       ].filter(Boolean).join('');
 
       const when = fmtDate(v.createdAt);
 
-      return `<article class="card">
-        <h3 style="margin:0 0 6px">${esc(v.title||'Untitled')}</h3>
+      return `<article class="card" data-id="${esc(v._id)}">
+        <div class="card-head">
+          <h3 style="margin:0">${esc(v.title||'Untitled')}</h3>
+          <div class="row-actions">
+            <button class="btn danger" type="button" onclick="deleteVideo('${esc(v._id)}')">Delete</button>
+          </div>
+        </div>
         <div class="meta">
           ${badges || '<span class="muted-sm">No meta</span>'}
           ${when ? `<span class="muted-sm">• ${esc(when)}</span>` : ''}
@@ -166,9 +181,9 @@
     }
 
     /*******************
-     * Bootstrap
+     * Data + actions
      *******************/
-    (async () => {
+    async function refreshList() {
       const status = document.getElementById('status');
       try {
         status.textContent = 'Loading…';
@@ -184,15 +199,64 @@
         status.textContent = 'Fetch error: ' + e.message;
         console.error(e);
       }
-    })();
+    }
 
-    // UI wiring
+    async function deleteVideo(id) {
+      if (!id) return;
+      if (!confirm('Delete this video? This cannot be undone.')) return;
+      const status = document.getElementById('status');
+      try {
+        status.textContent = 'Deleting…';
+        const res = await fetch(`/videos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const txt = await res.text();
+        if (!res.ok) {
+          alert(`Delete failed: ${res.status} ${res.statusText}\n${txt.slice(0,180)}`);
+          status.textContent = 'Delete failed';
+          return;
+        }
+        await refreshList();
+        status.textContent = 'Deleted';
+      } catch (e) {
+        alert('Delete error: ' + e.message);
+        status.textContent = 'Delete error';
+      }
+    }
+
+    async function deleteAllYouTube() {
+      if (!confirm('Delete ALL videos that are YouTube links? This cannot be undone.')) return;
+      const status = document.getElementById('status');
+      try {
+        status.textContent = 'Bulk deleting…';
+        const res = await fetch('/videos?provider=youtube', { method: 'DELETE' });
+        const txt = await res.text();
+        if (!res.ok) {
+          alert(`Bulk delete failed: ${res.status} ${res.statusText}\n${txt.slice(0,180)}`);
+          status.textContent = 'Bulk delete failed';
+          return;
+        }
+        await refreshList();
+        status.textContent = 'YouTube videos deleted';
+      } catch (e) {
+        alert('Bulk delete error: ' + e.message);
+        status.textContent = 'Bulk delete error';
+      }
+    }
+
+    /*******************
+     * Bootstrap + UI wiring
+     *******************/
+    (async () => { await refreshList(); })();
+
     document.getElementById('q').addEventListener('input', applyFilter);
     document.getElementById('sortBtn').addEventListener('click', (e)=>{
       newestFirst = !newestFirst;
       e.currentTarget.textContent = newestFirst ? 'Sort: Newest ↓' : 'Sort: Oldest ↑';
       applyFilter();
     });
+    document.getElementById('delYT').addEventListener('click', deleteAllYouTube);
+
+    // expose for inline onclick
+    window.deleteVideo = deleteVideo;
   </script>
 </body>
 </html>

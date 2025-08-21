@@ -4,7 +4,14 @@
   <meta charset="utf-8" />
   <title>EduTalk — Upload</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=2" />
+  <link rel="stylesheet" href="/style.css?v=6" />
+  <style>
+    .row { margin: 8px 0 }
+    .right { float: right }
+    .muted { color: #9aa3b2; font-size: .9rem }
+    .hint  { margin:6px 0 0; font-size:.85rem; color:#9aa3b2 }
+    .tiny  { font-size:.8rem }
+  </style>
 </head>
 <body>
   <header class="nav">
@@ -17,16 +24,39 @@
 
   <main class="container">
     <section class="card">
-      <h2>Upload a New Video</h2>
+      <div class="row">
+        <h2 style="display:inline">Upload a New Video</h2>
+        <button id="setKeyBtn" class="btn right tiny" type="button" title="Store/clear the CREATOR_API_KEY used for uploads">Creator API key…</button>
+      </div>
+
       <form id="uploadForm">
-        <label>Title: <input type="text" name="title" required></label><br><br>
-        <label>Publisher: <input type="text" name="publisher"></label><br><br>
-        <label>Producer: <input type="text" name="producer"></label><br><br>
-        <label>Genre: <input type="text" name="genre"></label><br><br>
-        <label>Age Rating: <input type="text" name="age"></label><br><br>
-        <label>Playback URL: <input type="url" name="playbackUrl" placeholder="YouTube link or MP4 URL" required></label><br><br>
-        <button type="submit" class="btn">Upload</button>
+        <div class="row"><label>Title:<br>
+          <input type="text" name="title" required></label></div>
+
+        <div class="row"><label>Publisher:<br>
+          <input type="text" name="publisher"></label></div>
+
+        <div class="row"><label>Producer:<br>
+          <input type="text" name="producer"></label></div>
+
+        <div class="row"><label>Genre:<br>
+          <input type="text" name="genre"></label></div>
+
+        <div class="row"><label>Age Rating:<br>
+          <input type="text" name="age" placeholder="e.g. G, PG, 13+, 18+"></label></div>
+
+        <div class="row"><label>Playback URL:<br>
+          <input type="url" name="playbackUrl"
+                 placeholder="Azure Blob SAS URL (mp4/webm/ogg) or YouTube link"
+                 required></label>
+          <div id="urlHint" class="hint"></div>
+        </div>
+
+        <div class="row">
+          <button type="submit" class="btn">Upload</button>
+        </div>
       </form>
+
       <p id="msg" class="muted" style="margin-top:8px"></p>
     </section>
   </main>
@@ -34,44 +64,107 @@
   <footer class="footer">© EduTalk</footer>
 
   <script>
-    const API_BASE = "https://apivideoshare-d5exf9a9fmhvbjef.canadacentral-01.azurewebsites.net";
+    // -------------- tiny helpers --------------
+    const API_BASE = location.origin; // call the same site we're on
+    const LS_KEY   = 'edutalk_creator_api_key';
 
-    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    const $ = sel => document.querySelector(sel);
+
+    function isYouTube(u='') {
+      try {
+        const x = new URL(u);
+        return x.hostname.includes('youtube.com') || x.hostname.includes('youtu.be');
+      } catch { return false; }
+    }
+    function isVideoFile(u='') {
+      return /\.(mp4|webm|ogg)(\?|#|$)/i.test(u);
+    }
+
+    // -------------- key management --------------
+    function getApiKey() {
+      return localStorage.getItem(LS_KEY) || '';
+    }
+    function setApiKeyInteractive() {
+      const current = getApiKey();
+      const v = prompt(
+        current
+          ? 'Update your CREATOR_API_KEY (leave blank to remove it):'
+          : 'Enter your CREATOR_API_KEY (from Azure App Settings):',
+        current
+      );
+      if (v === null) return;        // cancelled
+      if (v.trim() === '') {
+        localStorage.removeItem(LS_KEY);
+        alert('Key removed. (Uploads will work only if the server does not require a key.)');
+      } else {
+        localStorage.setItem(LS_KEY, v.trim());
+        alert('Key saved in this browser.');
+      }
+      reflectKeyState();
+    }
+    function reflectKeyState() {
+      const has = !!getApiKey();
+      $('#setKeyBtn').textContent = has ? 'Creator API key ✓' : 'Creator API key…';
+      $('#setKeyBtn').classList.toggle('muted', !has);
+    }
+
+    // -------------- form behaviour --------------
+    $('#setKeyBtn').addEventListener('click', setApiKeyInteractive);
+    reflectKeyState();
+
+    // real-time hint for the URL
+    $('input[name="playbackUrl"]').addEventListener('input', e => {
+      const v = e.target.value.trim();
+      const hint = isYouTube(v)
+        ? 'Detected YouTube link — it will be embedded with a YouTube player.'
+        : isVideoFile(v)
+          ? 'Detected direct video file — it will play with the built-in HTML5 player.'
+          : 'Paste an Azure Blob SAS URL (mp4/webm/ogg) or a YouTube link.';
+      $('#urlHint').textContent = hint;
+    });
+
+    $('#uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
-      const msg = document.getElementById('msg');
+      const msg  = $('#msg');
 
       const payload = {
-        title: form.title.value.trim(),
-        publisher: form.publisher.value.trim(),
-        producer: form.producer.value.trim(),
-        genre: form.genre.value.trim(),
-        age: form.age.value.trim(),
-        playbackUrl: form.playbackUrl.value.trim()
+        title:      form.title.value.trim(),
+        publisher:  form.publisher.value.trim(),
+        producer:   form.producer.value.trim(),
+        genre:      form.genre.value.trim(),
+        age:        form.age.value.trim(),
+        playbackUrl:form.playbackUrl.value.trim()
       };
+
+      if (!payload.title || !payload.playbackUrl) {
+        msg.textContent = '❌ Title and Playback URL are required.';
+        return;
+      }
 
       try {
         const headers = { 'Content-Type': 'application/json' };
-        // If you set CREATOR_API_KEY in Azure App Settings, uncomment:
-        // headers['x-api-key'] = 'YOUR_KEY_HERE';
+        const key = getApiKey();
+        if (key) headers['x-api-key'] = key; // only sent if set
 
-        const res = await fetch(`${API_BASE}/videos`, {
+        msg.textContent = 'Uploading…';
+        const res  = await fetch(`${API_BASE}/videos`, {
           method: 'POST',
           headers,
           body: JSON.stringify(payload)
         });
-
         const text = await res.text();
+
         if (!res.ok) {
-          msg.textContent = `❌ Upload failed: ${res.status} ${res.statusText} ${text.slice(0,180)}`;
+          msg.textContent = `❌ Upload failed: ${res.status} ${res.statusText} — ${text.slice(0,200)}`;
           return;
         }
 
-        msg.textContent = '✅ Video uploaded! Redirecting…';
-        setTimeout(()=>location.href='/videos.html', 1000);
+        msg.textContent = '✅ Video saved. Redirecting to the list…';
+        setTimeout(() => location.href = '/videos.html', 900);
       } catch (err) {
-        msg.textContent = '⚠️ Error: ' + err.message;
         console.error(err);
+        msg.textContent = '⚠️ Network error: ' + err.message;
       }
     });
   </script>

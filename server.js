@@ -89,8 +89,7 @@ const expose = (v) => ({
   createdAt: v.createdAt,
 });
 
-const isYouTube = (url = "") =>
-  /(?:youtube\.com|youtu\.be)/i.test(String(url));
+const isYouTube = (url = "") => /(?:youtube\.com|youtu\.be)/i.test(String(url));
 
 // API
 app.get("/health", (_req, res) => res.json({ status: "ok", db: dbState() }));
@@ -158,10 +157,10 @@ app.post("/videos/:id/ratings", async (req, res) => {
 });
 
 /* -----------------------------
-   NEW: deletion endpoints
+   Deletion endpoints
 ------------------------------*/
 
-// delete a single video by id (requires x-api-key)
+// delete a single video by id (requires x-api-key if configured)
 app.delete("/videos/:id", requireCreatorApiKey, async (req, res) => {
   try {
     const v = await Video.findByIdAndDelete(req.params.id);
@@ -173,15 +172,20 @@ app.delete("/videos/:id", requireCreatorApiKey, async (req, res) => {
   }
 });
 
-// bulk purge of YouTube-linked items (requires x-api-key)
-app.delete("/admin/purge-youtube", requireCreatorApiKey, async (_req, res) => {
+// bulk purge of YouTube-linked items (matches the front-end call DELETE /videos?provider=youtube)
+app.delete("/videos", requireCreatorApiKey, async (req, res) => {
   try {
+    if (String(req.query.provider || "").toLowerCase() !== "youtube") {
+      return res
+        .status(400)
+        .json({ ok: false, error: "unsupported bulk delete; use provider=youtube" });
+    }
     const r = await Video.deleteMany({
       playbackUrl: { $regex: /(youtube\.com|youtu\.be)/i },
     });
     res.json({ ok: true, deleted: r.deletedCount });
   } catch (e) {
-    console.error("Purge error:", e);
+    console.error("Bulk delete error:", e);
     res.status(500).json({ ok: false, error: "Failed to purge" });
   }
 });

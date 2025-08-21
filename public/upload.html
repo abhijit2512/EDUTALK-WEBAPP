@@ -74,18 +74,13 @@
 
   <script>
     // ===== Desktop file upload → Azure Blob (with SAS) =====
-    // 1) Paste your Container SAS URL (from Azure Portal → Storage → Containers → videos → Shared access tokens)
-    // Example format:
-    // https://stvideosedutalk.blob.core.windows.net/videos?sp=rwc&st=...&se=...&sv=...&sr=c&sig=...
-    const CONTAINER_SAS = "PASTE_YOUR_CONTAINER_SAS_URL_HERE";
+    const CONTAINER_SAS = "https://stvideosedutalk.blob.core.windows.net/videos?sp=racwl&st=2025-08-21T19:45:18Z&se=2025-08-29T04:00:18Z&spr=https&sv=2024-11-04&sr=c&sig=iho7Tp82442lYbTwdbVmluFUUOjJGokQHDeDQsKb1C4%3D";
 
-    // 2) Build a blob URL for a new filename within that container
     function buildBlobUrl(filename) {
       const [base, query] = CONTAINER_SAS.split("?");
       return `${base.replace(/\/$/, "")}/${encodeURIComponent(filename)}?${query}`;
     }
 
-    // 3) Upload handler
     async function uploadSelectedFile() {
       const fileEl = document.getElementById("fileInput");
       const statusEl = document.getElementById("fileStatus");
@@ -98,7 +93,6 @@
         return;
       }
 
-      // Use a safe unique name to avoid clashes
       const safeName = file.name.replace(/[^\w.\-]+/g, "_");
       const blobName = `${Date.now()}_${safeName}`;
       const blobUrl = buildBlobUrl(blobName);
@@ -107,9 +101,7 @@
         statusEl.textContent = "Uploading…";
         const res = await fetch(blobUrl, {
           method: "PUT",
-          headers: {
-            "x-ms-blob-type": "BlockBlob"
-          },
+          headers: { "x-ms-blob-type": "BlockBlob" },
           body: file
         });
 
@@ -118,9 +110,7 @@
           throw new Error(`HTTP ${res.status} ${res.statusText} ${txt.slice(0,140)}`);
         }
 
-        // If the container is public (Blob), you may use blobUrl.split("?")[0] as the playback URL
         urlInput.value = blobUrl;
-
         statusEl.textContent = "Uploaded ✓";
         alert("Upload complete. Playback URL field has been filled.");
       } catch (err) {
@@ -130,13 +120,11 @@
       }
     }
 
-    // Wire up the button
     document.getElementById("fileUploadBtn")?.addEventListener("click", uploadSelectedFile);
   </script>
 
   <script>
-    // -------------- tiny helpers --------------
-    const API_BASE = location.origin; // call the same site we're on
+    const API_BASE = location.origin;
     const LS_KEY   = 'edutalk_creator_api_key';
 
     const $ = sel => document.querySelector(sel);
@@ -151,25 +139,21 @@
       return /\.(mp4|webm|ogg)(\?|#|$)/i.test(u);
     }
 
-    // -------------- key management --------------
-    function getApiKey() {
-      return localStorage.getItem(LS_KEY) || '';
-    }
+    function getApiKey() { return localStorage.getItem(LS_KEY) || ''; }
     function setApiKeyInteractive() {
       const current = getApiKey();
       const v = prompt(
-        current
-          ? 'Update your CREATOR_API_KEY (leave blank to remove it):'
-          : 'Enter your CREATOR_API_KEY (from Azure App Settings):',
+        current ? 'Update your CREATOR_API_KEY (leave blank to remove it):'
+                : 'Enter your CREATOR_API_KEY (from Azure App Settings):',
         current
       );
-      if (v === null) return;        // cancelled
+      if (v === null) return;
       if (v.trim() === '') {
         localStorage.removeItem(LS_KEY);
-        alert('Key removed. (Uploads will work only if the server does not require a key.)');
+        alert('Key removed.');
       } else {
         localStorage.setItem(LS_KEY, v.trim());
-        alert('Key saved in this browser.');
+        alert('Key saved.');
       }
       reflectKeyState();
     }
@@ -179,18 +163,16 @@
       $('#setKeyBtn').classList.toggle('muted', !has);
     }
 
-    // -------------- form behaviour --------------
     $('#setKeyBtn').addEventListener('click', setApiKeyInteractive);
     reflectKeyState();
 
-    // real-time hint for the URL
     $('input[name="playbackUrl"]').addEventListener('input', e => {
       const v = e.target.value.trim();
       const hint = isYouTube(v)
-        ? 'Detected YouTube link — it will be embedded with a YouTube player.'
+        ? 'Detected YouTube link.'
         : isVideoFile(v)
-          ? 'Detected direct video file — it will play with the built-in HTML5 player.'
-          : 'Paste an Azure Blob SAS URL (mp4/webm/ogg) or a YouTube link.';
+          ? 'Detected direct video file.'
+          : 'Paste an Azure Blob SAS URL or YouTube link.';
       $('#urlHint').textContent = hint;
     });
 
@@ -200,11 +182,11 @@
       const msg  = $('#msg');
 
       const payload = {
-        title:       form.title.value.trim(),
-        publisher:   form.publisher.value.trim(),
-        producer:    form.producer.value.trim(),
-        genre:       form.genre.value.trim(),
-        age:         form.age.value.trim(),
+        title: form.title.value.trim(),
+        publisher: form.publisher.value.trim(),
+        producer: form.producer.value.trim(),
+        genre: form.genre.value.trim(),
+        age: form.age.value.trim(),
         playbackUrl: form.playbackUrl.value.trim()
       };
 
@@ -216,7 +198,7 @@
       try {
         const headers = { 'Content-Type': 'application/json' };
         const key = getApiKey();
-        if (key) headers['x-api-key'] = key; // only sent if set
+        if (key) headers['x-api-key'] = key;
 
         msg.textContent = 'Uploading…';
         const res  = await fetch(`${API_BASE}/videos`, {
@@ -231,7 +213,7 @@
           return;
         }
 
-        msg.textContent = '✅ Video saved. Redirecting to the list…';
+        msg.textContent = '✅ Video saved. Redirecting…';
         setTimeout(() => location.href = '/videos.html', 900);
       } catch (err) {
         console.error(err);

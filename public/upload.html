@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>EduTalk — Upload</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <h1><a href="/" style="color:inherit;text-decoration:none">EduTalk VideoShare</a></h1>
+    <nav>
+      <a href="/videos.html">All Videos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Upload a New Video</h2>
+      <form id="uploadForm">
+        <label>Title: <input type="text" name="title" required></label><br><br>
+        <label>Publisher: <input type="text" name="publisher"></label><br><br>
+        <label>Producer: <input type="text" name="producer"></label><br><br>
+        <label>Genre: <input type="text" name="genre"></label><br><br>
+        <label>Age Rating: <input type="text" name="age"></label><br><br>
+        <label>Playback URL: <input type="url" name="playbackUrl" placeholder="YouTube link or MP4 URL" required></label><br><br>
+        <button type="submit" class="btn">Upload</button>
+      </form>
+      <p id="msg" class="muted"></p>
+    </section>
+  </main>
+
+  <footer class="footer">© EduTalk</footer>
+
+  <script>
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const data = {
+        title: form.title.value,
+        publisher: form.publisher.value,
+        producer: form.producer.value,
+        genre: form.genre.value,
+        age: form.age.value,
+        playbackUrl: form.playbackUrl.value
+      };
+      try {
+        const res = await fetch('/videos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if(res.ok){
+          document.getElementById('msg').textContent = '✅ Video uploaded successfully!';
+          form.reset();
+        } else {
+          document.getElementById('msg').textContent = '❌ Upload failed!';
+        }
+      } catch (err) {
+        document.getElementById('msg').textContent = '⚠️ Error: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -2,18 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Uploaded Videos</title>
+  <title>Uploaded Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- use your shared styles if present -->
+  <link rel="stylesheet" href="/style.css" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 20px; }
-    h1 { margin-bottom: 16px; }
-    #status { margin: 8px 0 16px; color: #555; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
-    .title { font-weight: 700; margin: 0 0 6px; }
-    .meta { font-size: 12px; color: #666; margin-bottom: 8px; }
-    .player { width: 100%; aspect-ratio: 16 / 9; background:#000; border:0; border-radius: 6px; }
-    .url { font-size: 12px; word-break: break-all; margin-top:8px; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:20px}
+    h1{margin:0 0 12px}
+    #status{margin:8px 0 16px;color:#555}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.04)}
+    .title{font-weight:700;margin:0 0 6px}
+    .meta{font-size:12px;color:#666;margin-bottom:8px}
+    .player{width:100%;aspect-ratio:16/9;background:#000;border:0;border-radius:8px}
+    .thumb{position:relative;width:100%;aspect-ratio:16/9;border-radius:8px;background:#0a0f20 center/cover no-repeat;overflow:hidden;cursor:pointer}
+    .thumb .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.9)}
+    .thumb .play::after{content:'';position:absolute;left:26px;top:18px;border-left:18px solid #000;border-top:12px solid transparent;border-bottom:12px solid transparent}
+    .url{font-size:12px;word-break:break-all;margin-top:8px}
   </style>
 </head>
 <body>
@@ -22,90 +27,79 @@
   <div id="list" class="grid"></div>
 
   <script>
-    // Convert a YouTube watch URL to an embeddable URL
-    function toEmbedUrl(url) {
-      try {
-        const u = new URL(url);
-        if (u.hostname.includes('youtube.com') && u.searchParams.get('v')) {
-          return `https://www.youtube.com/embed/${u.searchParams.get('v')}`;
+    // ------- helpers -------
+    function escapeHtml(s=''){return String(s)
+      .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+      .replaceAll('"','&quot;').replaceAll("'","&#39;');}
+
+    function extractYouTubeId(url=''){
+      try{
+        const u=new URL(url);
+        if(u.hostname.includes('youtu.be')) return u.pathname.slice(1);
+        if(u.hostname.includes('youtube.com')){
+          if(u.searchParams.get('v')) return u.searchParams.get('v');
+          const p=u.pathname.split('/'); const i=p.indexOf('embed');
+          if(i!==-1 && p[i+1]) return p[i+1];
         }
-        if (u.hostname === 'youtu.be' && u.pathname.length > 1) {
-          return `https://www.youtube.com/embed/${u.pathname.slice(1)}`;
-        }
-      } catch (e) {}
+      }catch{}
       return null;
     }
+    function ytThumb(id){ return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`; }
 
-    async function load() {
-      const status = document.getElementById('status');
+    // ------- render -------
+    function render(items){
       const list = document.getElementById('list');
+      list.innerHTML = items.map(v => {
+        const title = escapeHtml(v.title || 'Untitled');
+        const meta  = `Publisher: ${escapeHtml(v.publisher||'—')} | Producer: ${escapeHtml(v.producer||'—')} | Genre: ${escapeHtml(v.genre||'—')} | Age: ${escapeHtml(v.age||'—')}`;
+        const ytId  = extractYouTubeId(v.playbackUrl || '');
 
-      try {
-        // Use your own origin so it works in any environment
-        const res = await fetch(`${location.origin}/api/videos`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        let player = '';
+        if (ytId) {
+          // No YouTube iframe: show our own thumbnail and open YT in a new tab
+          player = `
+            <div class="thumb" style="background-image:url('${ytThumb(ytId)}')"
+                 onclick="window.open('https://www.youtube.com/watch?v=${ytId}','_blank')">
+              <div class="play" title="Open on YouTube"></div>
+            </div>`;
+        } else if (v.playbackUrl && /\.(mp4|webm|ogg)(\?|$)/i.test(v.playbackUrl)) {
+          player = `<video class="player" src="${v.playbackUrl}" controls preload="metadata"></video>`;
+        } else {
+          player = `<div class="player" style="display:flex;align-items:center;justify-content:center;background:#0a0f20;color:#bbb">No preview</div>`;
+        }
 
-        if (!json.ok) throw new Error(json.error || 'Unknown error from API');
+        const linkLine = v.playbackUrl
+          ? `<div class="url">${escapeHtml(v.playbackUrl)}</div>` : '';
 
-        status.textContent = `Found ${json.count} video(s).`;
+        return `
+          <article class="card">
+            <div class="title">${title}</div>
+            <div class="meta">${meta}</div>
+            ${player}
+            ${linkLine}
+          </article>`;
+      }).join('');
+    }
 
-        json.data.forEach(v => {
-          const card = document.createElement('div');
-          card.className = 'card';
-
-          const h = document.createElement('div');
-          h.className = 'title';
-          h.textContent = v.title || '(untitled)';
-          card.appendChild(h);
-
-          const meta = document.createElement('div');
-          const date = v.createdAt ? new Date(v.createdAt) : null;
-          meta.className = 'meta';
-          meta.textContent =
-            `Publisher: ${v.publisher || '—'} | Producer: ${v.producer || '—'} | Genre: ${v.genre || '—'} | Age: ${v.ageRating || '—'}${date ? ' | ' + date.toLocaleString() : ''}`;
-          card.appendChild(meta);
-
-          // Try to embed YouTube; otherwise, fall back to <video> for mp4/ webm; otherwise link
-          const yt = toEmbedUrl(v.url || '');
-          if (yt) {
-            const iframe = document.createElement('iframe');
-            iframe.className = 'player';
-            iframe.src = yt;
-            iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-            iframe.allowFullscreen = true;
-            card.appendChild(iframe);
-          } else if (/\.(mp4|webm|ogg)(\?|$)/i.test(v.url || '')) {
-            const video = document.createElement('video');
-            video.className = 'player';
-            video.controls = true;
-            video.src = v.url;
-            card.appendChild(video);
-          } else if (v.url) {
-            const link = document.createElement('a');
-            link.href = v.url;
-            link.target = '_blank';
-            link.rel = 'noopener';
-            link.textContent = 'Open video';
-            card.appendChild(link);
-          }
-
-          if (v.url) {
-            const urlLine = document.createElement('div');
-            urlLine.className = 'url';
-            urlLine.textContent = v.url;
-            card.appendChild(urlLine);
-          }
-
-          list.appendChild(card);
-        });
-
-      } catch (err) {
+    // ------- load from API -------
+    async function load(){
+      const status = document.getElementById('status');
+      try{
+        // ✅ your backend exposes GET /videos and returns an ARRAY
+        const res = await fetch('/videos', { headers:{ 'Accept':'application/json' }});
+        if(!res.ok){
+          const txt = await res.text().catch(()=> '');
+          throw new Error(`HTTP ${res.status} ${res.statusText} ${txt}`);
+        }
+        const data = await res.json();
+        if(!Array.isArray(data)) throw new Error('Unexpected response shape');
+        status.textContent = `Found ${data.length} video(s).`;
+        render(data);
+      }catch(err){
         status.textContent = 'Failed to load videos: ' + err.message;
         console.error(err);
       }
     }
-
     load();
   </script>
 </body>

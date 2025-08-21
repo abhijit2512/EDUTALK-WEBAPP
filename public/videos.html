@@ -2,9 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Uploaded Videos — EduTalk</title>
+  <title>Latest Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=5" />
+  <link rel="stylesheet" href="/style.css?v=6" />
+  <style>
+    /* small, local tweaks that won’t fight your style.css */
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0 14px; }
+    .toolbar input[type="search"]{ padding:8px 10px; border:1px solid #20314f; background:#0a0f20; color:#e8eefc; border-radius:8px; min-width:240px; }
+    .toolbar .btn { padding:8px 12px; background:#1a3a8a; color:#fff; border-radius:8px; text-decoration:none; display:inline-flex; gap:6px; align-items:center; }
+    .meta { display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }
+    .badge { font-size:12px; padding:2px 8px; background:#13213b; color:#a9b6d3; border-radius:999px; }
+    .muted-sm { color:#9aa3b2; font-size:12px; }
+    .player { width:100%; aspect-ratio:16/9; background:#0a0f20; border-radius:12px; }
+    .empty { color:#9aa3b2; padding:16px 0; }
+  </style>
 </head>
 <body>
   <header class="nav">
@@ -19,26 +30,46 @@
 
   <main class="container">
     <section class="card">
-      <h2 style="margin:0">Uploaded Videos</h2>
-      <p id="status" class="muted" style="margin:8px 0 12px">Loading…</p>
+      <h2 style="margin:0">Latest Videos</h2>
+
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Search title, publisher, genre…" />
+        <button id="sortBtn" class="btn" type="button" aria-label="Toggle sort order">Sort: Newest ↓</button>
+        <span id="status" class="muted"></span>
+      </div>
+
       <div id="list" class="grid-cards"></div>
+      <p id="empty" class="empty" style="display:none">No videos match your filter.</p>
     </section>
   </main>
 
   <footer class="footer">© EduTalk</footer>
 
   <script>
+    /*******************
+     * Utilities
+     *******************/
     const esc = (s='') => String(s)
       .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
-      .replaceAll('"','&quot;').replaceAll("'","&#39;');
+      .replaceAll('"','&quot;').replaceAll("'","&#39;");
 
-    function ytId(url=''){
+    const fmtDate = (d) => {
+      try {
+        const dt = new Date(d);
+        if (isNaN(+dt)) return '';
+        return dt.toLocaleString();
+      } catch { return ''; }
+    };
+
+    // YouTube helpers
+    function ytId(url='') {
       try {
         const u = new URL(url);
         if (u.hostname.includes('youtu.be')) return u.pathname.slice(1);
         if (u.hostname.includes('youtube.com')) {
           if (u.searchParams.get('v')) return u.searchParams.get('v');
-          const parts = u.pathname.split('/'); const i = parts.indexOf('embed');
+          const parts = u.pathname.split('/');
+          const i = parts.indexOf('embed');
           if (i !== -1 && parts[i+1]) return parts[i+1];
         }
       } catch {}
@@ -47,53 +78,121 @@
 
     function ytEmbed(id){
       const src = `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
-      return `<iframe class="player" src="${src}" title="YouTube player" frameborder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+      const poster = `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+      return `<iframe class="player" src="${src}" title="YouTube player" loading="lazy"
+                style="background:url('${poster}') center/cover no-repeat"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
     }
 
-    function render(list){
-      const grid = document.getElementById('list');
-      const items = (Array.isArray(list)?list:[]).slice().sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-      if (!items.length) { grid.innerHTML = '<p class="muted">No videos found.</p>'; return; }
-
-      grid.innerHTML = items.map(v=>{
-        const id = ytId(v.playbackUrl||'');
-        const player = id
-          ? ytEmbed(id)
-          : (v.playbackUrl
-              ? `<video class="player" src="${esc(v.playbackUrl)}" controls preload="metadata"></video>`
-              : `<div class="player" style="display:flex;align-items:center;justify-content:center;background:#0a0f20;color:#9aa3b2">No preview</div>`);
-
-        const meta = [
-          v.publisher && ('Publisher: '+esc(v.publisher)),
-          v.producer  && ('Producer: '+esc(v.producer)),
-          v.genre     && ('Genre: '+esc(v.genre)),
-          v.age       && ('Age: '+esc(v.age))
-        ].filter(Boolean).join(' | ');
-
-        return `<article class="card">
-          <h3 style="margin:0 0 6px">${esc(v.title||'Untitled')}</h3>
-          <p class="muted" style="margin:0 0 8px">${meta || '&nbsp;'}</p>
-          ${player}
-        </article>`;
-      }).join('');
+    // Guess mime type from extension (helps the <video> element)
+    function guessType(url=''){
+      const u = url.split('?')[0].toLowerCase();
+      if (u.endsWith('.mp4'))  return 'video/mp4';
+      if (u.endsWith('.webm')) return 'video/webm';
+      if (u.endsWith('.ogg') || u.endsWith('.ogv')) return 'video/ogg';
+      return 'video/mp4';
     }
 
-    (async ()=>{
+    /*******************
+     * Rendering
+     *******************/
+    let ALL = [];         // original list
+    let newestFirst = true;
+
+    function card(v){
+      const youId  = ytId(v.playbackUrl||'');
+      const player = youId
+        ? ytEmbed(youId)
+        : (v.playbackUrl
+            ? `<video class="player" controls preload="metadata" crossorigin="anonymous" playsinline>
+                 <source src="${esc(v.playbackUrl)}" type="${guessType(v.playbackUrl)}">
+                 Your browser does not support the video tag.
+               </video>`
+            : `<div class="player" style="display:flex;align-items:center;justify-content:center;color:#9aa3b2">No preview</div>`);
+
+      const badges = [
+        v.publisher && `<span class="badge">Publisher: ${esc(v.publisher)}</span>`,
+        v.producer  && `<span class="badge">Producer: ${esc(v.producer)}</span>`,
+        v.genre     && `<span class="badge">Genre: ${esc(v.genre)}</span>`,
+        v.age       && `<span class="badge">Age: ${esc(v.age)}</span>`
+      ].filter(Boolean).join('');
+
+      const when = fmtDate(v.createdAt);
+
+      return `<article class="card">
+        <h3 style="margin:0 0 6px">${esc(v.title||'Untitled')}</h3>
+        <div class="meta">
+          ${badges || '<span class="muted-sm">No meta</span>'}
+          ${when ? `<span class="muted-sm">• ${esc(when)}</span>` : ''}
+        </div>
+        ${player}
+      </article>`;
+    }
+
+    function applyFilter() {
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      let list = [...ALL];
+
+      list.sort((a,b)=>{
+        const da = new Date(a.createdAt||0).getTime();
+        const db = new Date(b.createdAt||0).getTime();
+        return newestFirst ? (db - da) : (da - db);
+      });
+
+      if (q) {
+        list = list.filter(v => {
+          const hay = [
+            v.title, v.publisher, v.producer, v.genre, v.age
+          ].map(x => (x||'').toLowerCase()).join(' ');
+          return hay.includes(q);
+        });
+      }
+
+      const wrap = document.getElementById('list');
+      const empty = document.getElementById('empty');
+
+      if (!list.length) {
+        wrap.innerHTML = '';
+        empty.style.display = 'block';
+      } else {
+        empty.style.display = 'none';
+        wrap.innerHTML = list.map(card).join('');
+      }
+
+      // status line
       const status = document.getElementById('status');
-      try{
-        const res = await fetch('/videos?ts=' + Date.now(), { headers: { 'Accept':'application/json','Cache-Control':'no-cache' }});
+      status.textContent = `${list.length} of ${ALL.length} video(s)`;
+    }
+
+    /*******************
+     * Bootstrap
+     *******************/
+    (async () => {
+      const status = document.getElementById('status');
+      try {
+        status.textContent = 'Loading…';
+        const res = await fetch('/videos?ts=' + Date.now(), {
+          headers: { 'Accept':'application/json','Cache-Control':'no-cache' }
+        });
         const txt = await res.text();
         if (!res.ok) { status.textContent = `HTTP ${res.status}: ${txt.slice(0,160)}`; return; }
-        let data; try { data = JSON.parse(txt); } catch { status.textContent='Invalid JSON'; return; }
-        status.textContent = `Found ${Array.isArray(data)?data.length:0} video(s).`;
-        render(data);
-      }catch(e){
+        let data; try { data = JSON.parse(txt); } catch { status.textContent = 'Invalid JSON'; return; }
+        ALL = Array.isArray(data) ? data : [];
+        applyFilter();
+      } catch (e) {
         status.textContent = 'Fetch error: ' + e.message;
         console.error(e);
       }
     })();
+
+    // UI wiring
+    document.getElementById('q').addEventListener('input', applyFilter);
+    document.getElementById('sortBtn').addEventListener('click', (e)=>{
+      newestFirst = !newestFirst;
+      e.currentTarget.textContent = newestFirst ? 'Sort: Newest ↓' : 'Sort: Oldest ↑';
+      applyFilter();
+    });
   </script>
 </body>
 </html>

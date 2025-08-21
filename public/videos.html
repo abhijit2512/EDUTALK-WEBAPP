@@ -92,7 +92,7 @@
 
       try{
         // ✅ API returns an ARRAY at /videos
-        const res = await fetch('/videos', {
+    const res = await fetch('/api/videos', {
           headers: { 'Accept':'application/json', 'Cache-Control':'no-cache' },
           signal: ctl.signal
         });

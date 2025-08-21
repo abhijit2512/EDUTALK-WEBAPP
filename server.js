@@ -1,69 +1,104 @@
 // server.js
-// Express app for Azure App Service with MongoDB Atlas
+// Simple Node.js + Express app for Azure App Service with MongoDB Atlas
 
+// ---------- Imports ----------
 const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
 const path = require("path");
+const cors = require("cors");
+const mongoose = require("mongoose");
 
+// ---------- App & Middleware ----------
 const app = express();
-const PORT = process.env.PORT || 8080;
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection URI (from environment variables in Azure)
-const MONGO_URI = process.env.MONGO_URI;
+// ---------- Configuration ----------
+const PORT = process.env.PORT || 8080;          // Azure injects PORT -> DO NOT hardcode 3000
+const MONGO_URI = process.env.MONGO_URI;        // Set this in Azure: App Service -> Environment variables
 
-if (!MONGO_URI) {
-  console.error("❌ MONGO_URI is not defined in environment variables!");
-  process.exit(1);
-}
+// ---------- MongoDB Connection ----------
+let dbStatus = "not_connected";
 
-// MongoDB Connection
 async function connectDB() {
+  if (!MONGO_URI) {
+    console.error("MONGO_URI is not set in environment variables.");
+    dbStatus = "missing_uri";
+    return;
+  }
   try {
     await mongoose.connect(MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      serverApi: { version: "1", strict: true, deprecationErrors: true }
     });
-    console.log("✅ Connected to MongoDB Atlas");
+    await mongoose.connection.db.admin().command({ ping: 1 });
+    dbStatus = "connected";
+    console.log("✅ Connected to MongoDB Atlas!");
   } catch (err) {
+    dbStatus = "connect_error";
     console.error("❌ MongoDB connection error:", err.message);
-    process.exit(1);
   }
 }
 connectDB();
 
-// --- Routes ---
+// ---------- Mongo Model ----------
+const videoSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    url: { type: String, required: true }
+  },
+  { collection: "videos", timestamps: true }
+);
+const Video = mongoose.models.Video || mongoose.model("Video", videoSchema);
 
-// Root route (for Azure App Service startup check)
-app.get("/", (req, res) => {
+// ---------- Routes ----------
+
+// Root route (useful for Azure App Service startup check)
+app.get("/", (_req, res) => {
   res.send("🚀 API VideoShare backend is running successfully!");
 });
 
-// Health check endpoint (used by Azure & monitoring)
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+// Health check (for Azure + monitoring)
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", db: dbStatus });
 });
 
-// Example API route (expand later for video data)
-app.get("/api/videos", (req, res) => {
-  res.json({ message: "Video list will go here" });
+// TEST INSERT: creates a demo video document
+app.post("/api/videos/test-insert", async (_req, res) => {
+  try {
+    const doc = await Video.create({
+      title: "Hello from Azure",
+      url: "https://example.com/demo.mp4"
+    });
+    res.json({ ok: true, created: doc });
+  } catch (err) {
+    console.error("Insert error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// Serve static files (public folder)
+// LIST: returns all videos
+app.get("/api/videos", async (_req, res) => {
+  try {
+    const list = await Video.find().sort({ _id: -1 }).lean();
+    res.json({ ok: true, count: list.length, data: list });
+  } catch (err) {
+    console.error("List error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Serve static files (optional public folder)
 app.use(express.static(path.join(__dirname, "public")));
 
-// Start server
+// ---------- Start server ----------
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
 
-// Graceful shutdown
+// ---------- Graceful shutdown ----------
 process.on("SIGINT", async () => {
-  console.log("⚠️ Shutting down server...");
-  await mongoose.disconnect();
+  console.log("⚠️  Shutting down server...");
+  try {
+    await mongoose.disconnect();
+  } catch (_) {}
   process.exit(0);
 });

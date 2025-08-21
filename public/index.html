@@ -1,48 +1,99 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Upload Video - EduTalk</title>
+  <meta charset="utf-8" />
+  <title>EduTalk — Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <h1>Upload a New Video</h1>
-  <form id="uploadForm">
-    <label>Title: <input type="text" name="title" required></label><br><br>
-    <label>Publisher: <input type="text" name="publisher"></label><br><br>
-    <label>Producer: <input type="text" name="producer"></label><br><br>
-    <label>Genre: <input type="text" name="genre"></label><br><br>
-    <label>Age Rating: <input type="text" name="ageRating" value="PG"></label><br><br>
-    <label>Video URL: <input type="text" name="url" required></label><br><br>
-    <button type="submit">Upload</button>
-  </form>
+  <header class="nav">
+    <h1>EduTalk VideoShare</h1>
+    <nav>
+      <!-- Auth links (Azure Easy Auth). Keep even if not enabled yet -->
+      <a href="/.auth/login/aad">Sign in</a>
+      <a href="/.auth/logout">Sign out</a>
+      <a href="./videos.html">All Videos</a>
+      <a href="./upload.html">Upload</a>
+    </nav>
+  </header>
 
-  <p id="result"></p>
+  <main class="container">
+    <section class="hero card">
+      <h2 style="margin:0 0 8px 0">Welcome to EduTalk</h2>
+      <p class="muted" style="margin:0">
+        Browse the latest educational videos. Creators can upload with title, publisher, producer, genre, and age rating.
+      </p>
+      <div class="cta" style="margin-top:12px">
+        <a class="btn" href="./videos.html">Browse All</a>
+        <a class="btn btn-outline" href="./upload.html">Upload</a>
+      </div>
+    </section>
 
+    <!-- Dashboard: Latest videos -->
+    <section class="card">
+      <h2 style="margin-top:0">Latest videos</h2>
+      <div id="latest" class="grid-cards"></div>
+    </section>
+  </main>
+
+  <footer class="footer">© EduTalk</footer>
+
+  <!-- Inline helpers so we don't depend on other files -->
   <script>
-    const API_BASE = window.location.origin;
+    function api(path, opts = {}) {
+      const url = (path.startsWith('/') ? path : '/' + path);
+      const headers = Object.assign({}, opts.headers || {}, opts.json ? {'Content-Type':'application/json'} : {});
+      const body = opts.json ? JSON.stringify(opts.json) : opts.body;
+      return fetch(url, { method: opts.method || 'GET', headers, body });
+    }
+    function escapeHtml(s=''){return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;');}
+    function extractYouTubeId(url=''){try{const u=new URL(url);
+      if(u.hostname.includes('youtu.be')) return u.pathname.slice(1);
+      if(u.hostname.includes('youtube.com')){
+        if(u.searchParams.get('v')) return u.searchParams.get('v');
+        const p=u.pathname.split('/'); const i=p.indexOf('embed'); if(i!==-1&&p[i+1]) return p[i+1];
+      }}catch{} return null;}
+    function ytThumb(id){ return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`; }
 
-    document.getElementById("uploadForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
+    async function loadLatest(){
+      const box = document.getElementById('latest');
+      try{
+        const res = await api('/videos');           // your backend list endpoint
+        if(!res.ok) throw new Error('load failed');
+        const all = await res.json();
 
-      const formData = new FormData(e.target);
-      const data = Object.fromEntries(formData.entries());
+        // If your API has createdAt, we use it; otherwise list order
+        const latest = (all||[])
+          .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))
+          .slice(0,6);
 
-      try {
-        const res = await fetch(`${API_BASE}/api/videos`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": "edutalk-secret-2025" // 🔑 match your Azure setting
-          },
-          body: JSON.stringify(data)
-        });
+        box.innerHTML = latest.map(v=>{
+          const yt = extractYouTubeId(v.playbackUrl||'');
+          const player = yt
+            // No YouTube iframe → our thumbnail + play overlay opens YouTube in new tab
+            ? `<div class="thumb" style="background-image:url('${ytThumb(yt)}')"
+                 onclick="window.open('https://www.youtube.com/watch?v=${yt}','_blank')">
+                 <div class="play"></div></div>`
+            // Direct file (mp4/hls) uses native video element
+            : `<video class="player" src="${v.playbackUrl||''}" controls preload="metadata"></video>`;
 
-        const json = await res.json();
-        document.getElementById("result").textContent = JSON.stringify(json, null, 2);
-      } catch (err) {
-        document.getElementById("result").textContent = "Error: " + err;
+          return `
+            <article class="card">
+              ${player}
+              <div class="meta">
+                <h3>${escapeHtml(v.title||'Untitled')}</h3>
+                <p class="muted">
+                  ${escapeHtml(v.publisher||'')} ${v.genre ? ' • '+escapeHtml(v.genre) : ''} ${v.age ? ' • '+escapeHtml(v.age) : ''}
+                </p>
+              </div>
+            </article>`;
+        }).join('');
+      }catch(e){
+        box.innerHTML = '<p class="muted">Could not load latest videos.</p>';
       }
-    });
+    }
+    loadLatest();
   </script>
 </body>
 </html>

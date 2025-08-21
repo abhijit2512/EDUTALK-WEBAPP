@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Uploaded Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=4" />
+  <link rel="stylesheet" href="/style.css?v=5" />
 </head>
 <body>
   <header class="nav">
@@ -28,45 +28,50 @@
   <footer class="footer">© EduTalk</footer>
 
   <script>
-    // ---------- API Base URL (your backend) ----------
-    const API_BASE = "https://apivideoshare-d5exf9a9fmhvbjef.canadacentral-01.azurewebsites.net";
-
-    // ---------- helpers ----------
-    function esc(s=''){return String(s)
+    const esc = (s='') => String(s)
       .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
-      .replaceAll('"','&quot;').replaceAll("'","&#39;');}
-    function ytid(url=''){try{
-      const u=new URL(url);
-      if(u.hostname.includes('youtu.be')) return u.pathname.slice(1);
-      if(u.hostname.includes('youtube.com')){
-        if(u.searchParams.get('v')) return u.searchParams.get('v');
-        const p=u.pathname.split('/'); const i=p.indexOf('embed'); if(i!==-1 && p[i+1]) return p[i+1];
-      }}catch{} return null;}
-    const ythumb = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+      .replaceAll('"','&quot;').replaceAll("'","&#39;');
 
-    function renderGrid(items){
-      const list = document.getElementById('list');
-      const data = (Array.isArray(items) ? items : []).slice()
-        .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-      if (!data.length){
-        list.innerHTML = '<p class="muted">No videos found.</p>';
-        return;
-      }
-      list.innerHTML = data.map(v=>{
-        const id = ytid(v.playbackUrl||'');
+    function ytId(url=''){
+      try {
+        const u = new URL(url);
+        if (u.hostname.includes('youtu.be')) return u.pathname.slice(1);
+        if (u.hostname.includes('youtube.com')) {
+          if (u.searchParams.get('v')) return u.searchParams.get('v');
+          const parts = u.pathname.split('/'); const i = parts.indexOf('embed');
+          if (i !== -1 && parts[i+1]) return parts[i+1];
+        }
+      } catch {}
+      return null;
+    }
+
+    function ytEmbed(id){
+      const src = `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
+      return `<iframe class="player" src="${src}" title="YouTube player" frameborder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    }
+
+    function render(list){
+      const grid = document.getElementById('list');
+      const items = (Array.isArray(list)?list:[]).slice().sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+      if (!items.length) { grid.innerHTML = '<p class="muted">No videos found.</p>'; return; }
+
+      grid.innerHTML = items.map(v=>{
+        const id = ytId(v.playbackUrl||'');
         const player = id
-          ? `<div class="thumb" style="background-image:url('${ythumb(id)}')"
-               onclick="window.open('https://www.youtube.com/watch?v=${id}','_blank')">
-               <div class="play"></div></div>`
+          ? ytEmbed(id)
           : (v.playbackUrl
               ? `<video class="player" src="${esc(v.playbackUrl)}" controls preload="metadata"></video>`
               : `<div class="player" style="display:flex;align-items:center;justify-content:center;background:#0a0f20;color:#9aa3b2">No preview</div>`);
+
         const meta = [
-          v.publisher && 'Publisher: '+esc(v.publisher),
-          v.producer  && 'Producer: '+esc(v.producer),
-          v.genre     && 'Genre: '+esc(v.genre),
-          v.age       && 'Age: '+esc(v.age)
+          v.publisher && ('Publisher: '+esc(v.publisher)),
+          v.producer  && ('Producer: '+esc(v.producer)),
+          v.genre     && ('Genre: '+esc(v.genre)),
+          v.age       && ('Age: '+esc(v.age))
         ].filter(Boolean).join(' | ');
+
         return `<article class="card">
           <h3 style="margin:0 0 6px">${esc(v.title||'Untitled')}</h3>
           <p class="muted" style="margin:0 0 8px">${meta || '&nbsp;'}</p>
@@ -75,31 +80,18 @@
       }).join('');
     }
 
-    // ---------- loader ----------
-    (async () => {
-      const statusEl = document.getElementById('status');
-      try {
-        const res = await fetch(`${API_BASE}/videos?nocache=` + Date.now(), {
-          headers: { 'Accept':'application/json', 'Cache-Control':'no-cache' }
-        });
-        const raw = await res.text();
-        if (!res.ok) {
-          statusEl.textContent = `HTTP ${res.status}. Body: ${raw.slice(0,160).replace(/\s+/g,' ')}`;
-          console.error('[videos] HTTP', res.status, raw);
-          return;
-        }
-        let data;
-        try { data = JSON.parse(raw); }
-        catch { 
-          statusEl.textContent = `HTTP 200, but response is not JSON. Body: ${raw.slice(0,160).replace(/\s+/g,' ')}`;
-          console.error('[videos] Non-JSON body:', raw);
-          return;
-        }
-        statusEl.textContent = `Found ${Array.isArray(data) ? data.length : 0} video(s).`;
-        renderGrid(data);
-      } catch (err) {
-        statusEl.textContent = 'Fetch error: ' + err.message;
-        console.error('[videos] fetch error', err);
+    (async ()=>{
+      const status = document.getElementById('status');
+      try{
+        const res = await fetch('/videos?ts=' + Date.now(), { headers: { 'Accept':'application/json','Cache-Control':'no-cache' }});
+        const txt = await res.text();
+        if (!res.ok) { status.textContent = `HTTP ${res.status}: ${txt.slice(0,160)}`; return; }
+        let data; try { data = JSON.parse(txt); } catch { status.textContent='Invalid JSON'; return; }
+        status.textContent = `Found ${Array.isArray(data)?data.length:0} video(s).`;
+        render(data);
+      }catch(e){
+        status.textContent = 'Fetch error: ' + e.message;
+        console.error(e);
       }
     })();
   </script>

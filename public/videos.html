@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Uploaded Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=3" />
+  <link rel="stylesheet" href="/style.css?v=4" />
 </head>
 <body>
   <header class="nav">
@@ -28,6 +28,9 @@
   <footer class="footer">© EduTalk</footer>
 
   <script>
+    // ---------- API Base URL (your backend) ----------
+    const API_BASE = "https://apivideoshare-d5exf9a9fmhvbjef.canadacentral-01.azurewebsites.net";
+
     // ---------- helpers ----------
     function esc(s=''){return String(s)
       .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
@@ -72,15 +75,14 @@
       }).join('');
     }
 
-    // ---------- loader with diagnostics ----------
+    // ---------- loader ----------
     (async () => {
       const statusEl = document.getElementById('status');
       try {
-        const res = await fetch('/videos?nocache=' + Date.now(), {
+        const res = await fetch(`${API_BASE}/videos?nocache=` + Date.now(), {
           headers: { 'Accept':'application/json', 'Cache-Control':'no-cache' }
         });
         const raw = await res.text();
-        // show status + small preview if not JSON
         if (!res.ok) {
           statusEl.textContent = `HTTP ${res.status}. Body: ${raw.slice(0,160).replace(/\s+/g,' ')}`;
           console.error('[videos] HTTP', res.status, raw);

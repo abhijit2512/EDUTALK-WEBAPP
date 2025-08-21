@@ -21,7 +21,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const MONGO_URI =
   process.env.MONGO_URI ||
-  "mongodb+srv://edutalkUser:<password>@edutalk-cluster.n8jlomv.mongodb.net/edutalk?retryWrites=true&w=majority";
+  "mongodb+srv://edutalkUser:MyPass123@edutalk-cluster.n8jlomv.mongodb.net/edutalk?retryWrites=true&w=majority";
 
 const CREATOR_API_KEY = process.env.CREATOR_API_KEY || "";
 

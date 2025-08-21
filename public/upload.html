@@ -45,6 +45,14 @@
         <div class="row"><label>Age Rating:<br>
           <input type="text" name="age" placeholder="e.g. G, PG, 13+, 18+"></label></div>
 
+                
+        <div class="row">
+            <label>Upload from Desktop:</label><br>
+            <input type="file" id="fileInput" accept="video/*" />
+            <button type="button" id="fileUploadBtn" class="btn">Upload Video File</button>
+            <small id="fileStatus" class="muted-sm"></small>
+                </div>
+       
         <div class="row"><label>Playback URL:<br>
           <input type="url" name="playbackUrl"
                  placeholder="Azure Blob SAS URL (mp4/webm/ogg) or YouTube link"

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Uploaded Videos — EduTalk</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -20,7 +20,7 @@
   <main class="container">
     <section class="card">
       <h2 style="margin:0">Uploaded Videos</h2>
-      <div id="status" class="muted" style="margin:8px 0 12px">Loading…</div>
+      <p id="status" class="muted" style="margin:8px 0 12px">Loading…</p>
       <div id="list" class="grid-cards"></div>
     </section>
   </main>
@@ -28,89 +28,44 @@
   <footer class="footer">© EduTalk</footer>
 
   <script>
-    // ---------- helpers ----------
-    function escapeHtml(s=''){return String(s)
+    function esc(s=''){return String(s)
       .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
-      .replaceAll('"','&quot;').replaceAll("'","&#39;');}
-
-    function extractYouTubeId(url=''){try{
+      .replaceAll('"','&quot;').replaceAll("'","&#39;')}
+    function ytid(url=''){try{
       const u=new URL(url);
       if(u.hostname.includes('youtu.be')) return u.pathname.slice(1);
       if(u.hostname.includes('youtube.com')){
         if(u.searchParams.get('v')) return u.searchParams.get('v');
         const p=u.pathname.split('/'); const i=p.indexOf('embed'); if(i!==-1&&p[i+1]) return p[i+1];
-      }
-    }catch{} return null;}
-    function ytThumb(id){ return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`; }
-
-    function render(items){
-      const list = document.getElementById('list');
-      if (!Array.isArray(items)) {
-        list.innerHTML = '<p class="muted">Unexpected response.</p>';
-        return;
-      }
-
-      // newest first if createdAt exists
-      const data = items.slice().sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
-
-      list.innerHTML = data.map(v=>{
-        const title = escapeHtml(v.title || 'Untitled');
-        const meta  = [
-          v.publisher ? `Publisher: ${escapeHtml(v.publisher)}` : null,
-          v.producer  ? `Producer: ${escapeHtml(v.producer)}`   : null,
-          v.genre     ? `Genre: ${escapeHtml(v.genre)}`          : null,
-          v.age       ? `Age: ${escapeHtml(v.age)}`              : null
-        ].filter(Boolean).join(' | ');
-
-        const yt = extractYouTubeId(v.playbackUrl || '');
-        const player = yt
-          // Thumbnail + our play overlay (no YouTube iframe/logo)
-          ? `<div class="thumb" style="background-image:url('${ytThumb(yt)}')"
-               onclick="window.open('https://www.youtube.com/watch?v=${yt}','_blank')">
-               <div class="play" title="Open on YouTube"></div>
-             </div>`
-          // Native video element for direct files
-          : (v.playbackUrl
-              ? `<video class="player" src="${v.playbackUrl}" controls preload="metadata"></video>`
-              : `<div class="player" style="display:flex;align-items:center;justify-content:center;background:#0a0f20;color:#9aa3b2">
-                   No preview
-                 </div>`);
-
-        return `
-          <article class="card">
-            <h3 style="margin:0 0 6px">${title}</h3>
-            <p class="muted" style="margin:0 0 8px">${meta || '&nbsp;'}</p>
-            ${player}
-          </article>`;
-      }).join('');
-    }
+      }}catch{} return null;}
+    const ythumb = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 
     async function load(){
       const status = document.getElementById('status');
-      const ctl = new AbortController();
-      const timer = setTimeout(()=>ctl.abort(), 12000); // 12s timeout
-
+      const list = document.getElementById('list');
       try{
-        // ✅ API returns an ARRAY at /videos
-    const res = await fetch('/api/videos', {
-          headers: { 'Accept':'application/json', 'Cache-Control':'no-cache' },
-          signal: ctl.signal
-        });
-        if(!res.ok){
-          const txt = await res.text().catch(()=> '');
-          throw new Error(`HTTP ${res.status} ${res.statusText} ${txt.slice(0,150)}`);
-        }
-        const data = await res.json().catch(()=>{ throw new Error('Invalid JSON'); });
-        render(data);
-        status.textContent = `Found ${Array.isArray(data) ? data.length : 0} video(s).`;
-      }catch(err){
-        status.textContent = 'Failed to load videos: ' + err.message;
-        console.error('[videos.html] load error:', err);
-      }finally{
-        clearTimeout(timer);
+        const res = await fetch('/videos',{headers:{'Accept':'application/json'}});
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const data = await res.json();
+        if(!Array.isArray(data) || !data.length){ status.textContent='No videos found.'; return; }
+        status.textContent = `Found ${data.length} video(s).`;
+        list.innerHTML = data.map(v=>{
+          const id = ytid(v.playbackUrl||'');
+          const player = id
+            ? `<div class="thumb" style="background-image:url('${ythumb(id)}')" onclick="window.open('https://www.youtube.com/watch?v=${id}','_blank')"><div class="play"></div></div>`
+            : (v.playbackUrl? `<video class="player" src="${esc(v.playbackUrl)}" controls preload="metadata"></video>` : `<div class="player" style="display:flex;align-items:center;justify-content:center;background:#0a0f20;color:#9aa3b2">No preview</div>`);
+          const meta = [v.publisher&&'Publisher: '+esc(v.publisher), v.genre&&'Genre: '+esc(v.genre), v.age&&'Age: '+esc(v.age)].filter(Boolean).join(' | ');
+          return `<article class="card">
+            <h3 style="margin:0 0 6px">${esc(v.title||'Untitled')}</h3>
+            <p class="muted" style="margin:0 0 8px">${meta || '&nbsp;'}</p>
+            ${player}
+          </article>`;
+        }).join('');
+      }catch(e){
+        status.textContent='Failed to load videos.';
+        console.error(e);
       }
     }
-
     load();
   </script>
 </body>

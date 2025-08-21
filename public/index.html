@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <title>EduTalk — Home</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="./styles.css" />
+  <!-- FIX: correct stylesheet path -->
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header class="nav">
@@ -13,8 +14,9 @@
       <!-- Auth links (Azure Easy Auth). Keep even if not enabled yet -->
       <a href="/.auth/login/aad">Sign in</a>
       <a href="/.auth/logout">Sign out</a>
-      <a href="./videos.html">All Videos</a>
-      <a href="./upload.html">Upload</a>
+      <!-- FIX: absolute links so they work from '/' -->
+      <a href="/videos.html">All Videos</a>
+      <a href="/upload.html">Upload</a>
     </nav>
   </header>
 
@@ -25,8 +27,8 @@
         Browse the latest educational videos. Creators can upload with title, publisher, producer, genre, and age rating.
       </p>
       <div class="cta" style="margin-top:12px">
-        <a class="btn" href="./videos.html">Browse All</a>
-        <a class="btn btn-outline" href="./upload.html">Upload</a>
+        <a class="btn" href="/videos.html">Browse All</a>
+        <a class="btn btn-outline" href="/upload.html">Upload</a>
       </div>
     </section>
 

@@ -1,0 +1,24 @@
+/* Thumbnail with our own play button (no YouTube iframe in-page) */
+.thumb{
+  position:relative; width:100%; aspect-ratio:16/9;
+  border-radius:12px; background:#0a0f20 center/cover no-repeat;
+  overflow:hidden; cursor:pointer;
+}
+.thumb .play{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:64px; height:64px; border-radius:50%;
+  background:rgba(255,255,255,.9);
+}
+.thumb .play::after{
+  content:''; position:absolute; left:26px; top:18px;
+  border-left:18px solid #000;
+  border-top:12px solid transparent; border-bottom:12px solid transparent;
+}
+
+/* Native video element look */
+.player{ width:100%; aspect-ratio:16/9; border:0; border-radius:12px; background:#0a0f20; }
+
+/* Rating stars (used later) */
+.rating{ display:flex; gap:4px; align-items:center }
+.star{ font-size:18px; cursor:pointer }
+.star.off{ opacity:.35 }

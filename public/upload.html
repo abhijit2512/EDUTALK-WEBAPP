@@ -11,6 +11,7 @@
     .muted { color: #9aa3b2; font-size: .9rem }
     .hint  { margin:6px 0 0; font-size:.85rem; color:#9aa3b2 }
     .tiny  { font-size:.8rem }
+    .muted-sm { color:#9aa3b2; font-size:.85rem }
   </style>
 </head>
 <body>
@@ -45,14 +46,14 @@
         <div class="row"><label>Age Rating:<br>
           <input type="text" name="age" placeholder="e.g. G, PG, 13+, 18+"></label></div>
 
-                
+        <!-- Desktop file upload -->
         <div class="row">
-            <label>Upload from Desktop:</label><br>
-            <input type="file" id="fileInput" accept="video/*" />
-            <button type="button" id="fileUploadBtn" class="btn">Upload Video File</button>
-            <small id="fileStatus" class="muted-sm"></small>
-                </div>
-       
+          <label>Upload from Desktop:</label><br>
+          <input type="file" id="fileInput" accept="video/*" />
+          <button type="button" id="fileUploadBtn" class="btn">Upload Video File</button>
+          <small id="fileStatus" class="muted-sm"></small>
+        </div>
+
         <div class="row"><label>Playback URL:<br>
           <input type="url" name="playbackUrl"
                  placeholder="Azure Blob SAS URL (mp4/webm/ogg) or YouTube link"
@@ -70,6 +71,68 @@
   </main>
 
   <footer class="footer">© EduTalk</footer>
+
+  <script>
+    // ===== Desktop file upload → Azure Blob (with SAS) =====
+    // 1) Paste your Container SAS URL (from Azure Portal → Storage → Containers → videos → Shared access tokens)
+    // Example format:
+    // https://stvideosedutalk.blob.core.windows.net/videos?sp=rwc&st=...&se=...&sv=...&sr=c&sig=...
+    const CONTAINER_SAS = "PASTE_YOUR_CONTAINER_SAS_URL_HERE";
+
+    // 2) Build a blob URL for a new filename within that container
+    function buildBlobUrl(filename) {
+      const [base, query] = CONTAINER_SAS.split("?");
+      return `${base.replace(/\/$/, "")}/${encodeURIComponent(filename)}?${query}`;
+    }
+
+    // 3) Upload handler
+    async function uploadSelectedFile() {
+      const fileEl = document.getElementById("fileInput");
+      const statusEl = document.getElementById("fileStatus");
+      const urlInput = document.querySelector('input[name="playbackUrl"]');
+
+      const file = fileEl?.files?.[0];
+      if (!file) { alert("Please choose a video file first."); return; }
+      if (!CONTAINER_SAS || !CONTAINER_SAS.includes("?")) {
+        alert("Container SAS URL is missing. Paste it at the top of this file.");
+        return;
+      }
+
+      // Use a safe unique name to avoid clashes
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+      const blobName = `${Date.now()}_${safeName}`;
+      const blobUrl = buildBlobUrl(blobName);
+
+      try {
+        statusEl.textContent = "Uploading…";
+        const res = await fetch(blobUrl, {
+          method: "PUT",
+          headers: {
+            "x-ms-blob-type": "BlockBlob"
+          },
+          body: file
+        });
+
+        if (!res.ok) {
+          const txt = await res.text().catch(()=>"");
+          throw new Error(`HTTP ${res.status} ${res.statusText} ${txt.slice(0,140)}`);
+        }
+
+        // If the container is public (Blob), you may use blobUrl.split("?")[0] as the playback URL
+        urlInput.value = blobUrl;
+
+        statusEl.textContent = "Uploaded ✓";
+        alert("Upload complete. Playback URL field has been filled.");
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Upload failed";
+        alert("Upload error: " + (err?.message || err));
+      }
+    }
+
+    // Wire up the button
+    document.getElementById("fileUploadBtn")?.addEventListener("click", uploadSelectedFile);
+  </script>
 
   <script>
     // -------------- tiny helpers --------------
@@ -137,12 +200,12 @@
       const msg  = $('#msg');
 
       const payload = {
-        title:      form.title.value.trim(),
-        publisher:  form.publisher.value.trim(),
-        producer:   form.producer.value.trim(),
-        genre:      form.genre.value.trim(),
-        age:        form.age.value.trim(),
-        playbackUrl:form.playbackUrl.value.trim()
+        title:       form.title.value.trim(),
+        publisher:   form.publisher.value.trim(),
+        producer:    form.producer.value.trim(),
+        genre:       form.genre.value.trim(),
+        age:         form.age.value.trim(),
+        playbackUrl: form.playbackUrl.value.trim()
       };
 
       if (!payload.title || !payload.playbackUrl) {

@@ -46,11 +46,12 @@
         playbackUrl: form.playbackUrl.value
       };
       try {
-        const res = await fetch('/videos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
+   const res = await fetch('/api/videos', {   // <— use the API alias
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data)
+});
+
         if(res.ok){
           document.getElementById('msg').textContent = '✅ Video uploaded successfully!';
           form.reset();

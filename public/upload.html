@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>EduTalk — Upload</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/style.css?v=2" />
 </head>
 <body>
   <header class="nav">
@@ -34,6 +34,8 @@
   <footer class="footer">© EduTalk</footer>
 
   <script>
+    const API_BASE = "https://apivideoshare-d5exf9a9fmhvbjef.canadacentral-01.azurewebsites.net";
+
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -50,10 +52,10 @@
 
       try {
         const headers = { 'Content-Type': 'application/json' };
-        // If you set CREATOR_API_KEY in Azure App Settings, also send:
+        // If you set CREATOR_API_KEY in Azure App Settings, uncomment:
         // headers['x-api-key'] = 'YOUR_KEY_HERE';
 
-        const res = await fetch('/videos', {
+        const res = await fetch(`${API_BASE}/videos`, {
           method: 'POST',
           headers,
           body: JSON.stringify(payload)
@@ -66,7 +68,7 @@
         }
 
         msg.textContent = '✅ Video uploaded! Redirecting…';
-        setTimeout(()=>location.href='/videos.html', 700);
+        setTimeout(()=>location.href='/videos.html', 1000);
       } catch (err) {
         msg.textContent = '⚠️ Error: ' + err.message;
         console.error(err);

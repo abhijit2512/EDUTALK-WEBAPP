@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <title>Latest Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- 🔑 Set this to your CREATOR_API_KEY from Azure App Settings -->
+  <meta name="x-api-key" content="CHANGE_ME_CREATOR_API_KEY" />
+
   <link rel="stylesheet" href="/style.css?v=7" />
   <style>
     /* small, local tweaks that won’t fight your style.css */
@@ -69,6 +73,16 @@
         return dt.toLocaleString();
       } catch { return ''; }
     };
+
+    // 🔑 read API key from <meta> (or fallback to a global you can set elsewhere)
+    function getApiKey() {
+      const meta = document.querySelector('meta[name="x-api-key"]');
+      return (meta && meta.content) || (window.EDUTALK_API_KEY || '').trim();
+    }
+    function authHeaders(extra = {}) {
+      const key = getApiKey();
+      return key ? { ...extra, 'x-api-key': key } : extra;
+    }
 
     // YouTube helpers
     function ytId(url='') {
@@ -207,7 +221,10 @@
       const status = document.getElementById('status');
       try {
         status.textContent = 'Deleting…';
-        const res = await fetch(`/videos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const res = await fetch(`/videos/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: authHeaders({ 'Content-Type': 'application/json' })
+        });
         const txt = await res.text();
         if (!res.ok) {
           alert(`Delete failed: ${res.status} ${res.statusText}\n${txt.slice(0,180)}`);
@@ -227,7 +244,10 @@
       const status = document.getElementById('status');
       try {
         status.textContent = 'Bulk deleting…';
-        const res = await fetch('/videos?provider=youtube', { method: 'DELETE' });
+        const res = await fetch('/videos?provider=youtube', {
+          method: 'DELETE',
+          headers: authHeaders({ 'Content-Type': 'application/json' })
+        });
         const txt = await res.text();
         if (!res.ok) {
           alert(`Bulk delete failed: ${res.status} ${res.statusText}\n${txt.slice(0,180)}`);

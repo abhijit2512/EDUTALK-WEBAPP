@@ -1,27 +1,282 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Edutalk WebApp</title>
+  <meta charset="utf-8" />
+  <title>EduTalk • VideoShare</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-    h1 { color: #0078d7; }
-    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    :root{
+      --bg:#0b1020; --card:#121a33; --muted:#7f8db2; --text:#eaf0ff; --accent:#6ea8ff; --ok:#36d399; --err:#ff6b6b;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,"Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji"; 
+      color:var(--text); background:linear-gradient(180deg,#0a0f1e 0,#0b1329 100%);
+      min-height:100vh; line-height:1.35;
+    }
+    header{
+      position:sticky; top:0; z-index:10; backdrop-filter: blur(6px);
+      background:rgba(10,15,30,.6); border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .wrap{max-width:1100px; margin:0 auto; padding:20px}
+    h1{margin:0; font-size:22px; display:flex; gap:10px; align-items:center}
+    h1 .dot{width:10px; height:10px; border-radius:50%; background:var(--ok); box-shadow:0 0 12px var(--ok)}
+    .muted{color:var(--muted)}
+    .row{display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-top:12px}
+    input,select,button,textarea{
+      color:var(--text); background:#0f1730; border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:10px 12px; outline:none;
+    }
+    input:focus,select:focus,textarea:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(110,168,255,.15)}
+    button{cursor:pointer; transition:.15s; font-weight:600}
+    .btn{background:var(--accent); color:#071024; border:0}
+    .btn:hover{filter:brightness(1.05)}
+    .btn.secondary{background:#1a2445; color:var(--text); border:1px solid rgba(255,255,255,.08)}
+    .grid{display:grid; gap:16px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); margin-top:18px}
+    .card{
+      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:14px;
+      box-shadow:0 6px 20px rgba(0,0,0,.25);
+    }
+    .card h3{margin:0 0 6px 0; font-size:18px}
+    .pill{display:inline-block; padding:4px 8px; border:1px solid rgba(255,255,255,.08); border-radius:999px; font-size:12px; color:var(--muted)}
+    .flex{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    .spc{display:flex; align-items:center; justify-content:space-between; gap:10px}
+    .center{display:flex; align-items:center; justify-content:center}
+    .footer{margin:40px 0 30px; text-align:center; color:var(--muted); font-size:13px}
+    .msg{margin-top:10px; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.08); background:#0f1730}
+    .msg.ok{border-color:rgba(54,211,153,.35); background:rgba(54,211,153,.08); color:#c9ffe6}
+    .msg.err{border-color:rgba(255,107,107,.35); background:rgba(255,107,107,.08); color:#ffdede}
+    .hidden{display:none}
+    .video-modal{
+      position:fixed; inset:0; background:rgba(3,5,12,.6); backdrop-filter: blur(6px);
+      display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;
+    }
+    .video-box{
+      width:min(900px,100%); background:#050915; border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:12px;
+    }
+    video{width:100%; max-height:70vh; background:#000; border-radius:10px}
+    .kbd{font:600 11px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; background:#0c142b; padding:4px 6px; border-radius:6px}
   </style>
 </head>
 <body>
-  <h1>Welcome to Edutalk WebApp</h1>
-  <p>This is a simple Node.js + Azure Web App deployment.</p>
-  <button onclick="callApi()">Call API</button>
-  <p id="result"></p>
+  <header>
+    <div class="wrap spc">
+      <h1><span class="dot"></span> EduTalk <span class="muted">•</span> VideoShare</h1>
+      <div class="flex">
+        <input id="search" placeholder="Search title / genre / publisher…" />
+        <button class="btn secondary" id="refreshBtn">Refresh</button>
+        <button class="btn" id="creatorToggle">Creator Mode</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="spc" style="margin-top:8px">
+      <div class="muted">Latest videos • <span id="count">0</span></div>
+      <div class="muted">Health: <span id="health" class="kbd">checking…</span></div>
+    </div>
+
+    <!-- Creator form (hidden by default) -->
+    <section id="creatorForm" class="card hidden" style="margin-top:16px">
+      <div class="spc">
+        <h3 style="margin:0">Upload / Register Video (Creators)</h3>
+        <small class="muted">If protected, include your <code>x-api-key</code>.</small>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="f_title" placeholder="Title *" style="flex:1 1 240px" />
+        <input id="f_publisher" placeholder="Publisher" value="EduTalk" />
+        <input id="f_producer" placeholder="Producer" value="Admin" />
+        <input id="f_genre" placeholder="Genre" value="Education" />
+        <select id="f_age" style="min-width:130px">
+          <option value="G">G</option><option value="PG" selected>PG</option>
+          <option value="13">13</option><option value="18">18</option>
+        </select>
+        <input id="f_url" placeholder="Video URL (mp4) *" style="flex:1 1 280px" />
+        <input id="f_key" placeholder="x-api-key (optional)" />
+        <button class="btn" id="createBtn">Submit</button>
+      </div>
+      <div id="createMsg" class="msg hidden"></div>
+    </section>
+
+    <!-- Videos grid -->
+    <section id="grid" class="grid"></section>
+
+    <p class="footer">© <span id="year"></span> EduTalk • Deployed on Azure App Service • Backed by MongoDB Atlas</p>
+  </main>
+
+  <!-- Video modal -->
+  <div id="videoModal" class="video-modal hidden" role="dialog" aria-modal="true">
+    <div class="video-box">
+      <div class="spc" style="margin-bottom:8px">
+        <strong id="modalTitle">Playing</strong>
+        <button id="closeModal" class="btn secondary">Close ✕</button>
+      </div>
+      <video id="player" controls preload="metadata"></video>
+      <div class="muted" id="meta" style="margin-top:8px"></div>
+    </div>
+  </div>
 
   <script>
-    async function callApi() {
-      const res = await fetch('/api/hello');
-      const data = await res.json();
-      document.getElementById('result').innerText = data.message;
+    const $ = (sel)=>document.querySelector(sel);
+    const grid = $("#grid");
+    const search = $("#search");
+    const countEl = $("#count");
+    const healthEl = $("#health");
+    const yearEl = $("#year");
+    yearEl.textContent = new Date().getFullYear();
+
+    const creatorToggle = $("#creatorToggle");
+    const creatorForm   = $("#creatorForm");
+    const createBtn     = $("#createBtn");
+    const createMsg     = $("#createMsg");
+
+    const modal = $("#videoModal");
+    const player = $("#player");
+    const modalTitle = $("#modalTitle");
+    const meta = $("#meta");
+    const closeModal = $("#closeModal");
+
+    // --- helpers ---
+    const fmt = d => new Date(d).toLocaleString();
+    const escape = s => String(s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+    function showMsg(node, text, type="ok"){
+      node.textContent = text;
+      node.classList.remove("hidden","ok","err");
+      node.classList.add(type === "ok" ? "ok" : "err");
+      setTimeout(()=>node.classList.add("hidden"), 3500);
     }
+
+    // --- fetch health ---
+    async function fetchHealth(){
+      try{
+        const r = await fetch("/api/health");
+        const j = await r.json();
+        if(j.status === "ok" && j.db === "connected"){
+          healthEl.textContent = "OK";
+          healthEl.style.color = "#baffd6";
+        }else{
+          healthEl.textContent = (j.status||"") + " / " + (j.db||"");
+          healthEl.style.color = "#ffdede";
+        }
+      }catch(_){
+        healthEl.textContent = "unreachable";
+        healthEl.style.color = "#ffdede";
+      }
+    }
+
+    // --- fetch videos ---
+    let allVideos = [];
+    async function loadVideos(){
+      grid.innerHTML = "<div class='center muted' style='grid-column:1/-1; padding:24px'>Loading…</div>";
+      try{
+        const res = await fetch("/api/videos");
+        const data = await res.json();
+        allVideos = Array.isArray(data.data) ? data.data : [];
+        render();
+      }catch(e){
+        grid.innerHTML = "<div class='center muted' style='grid-column:1/-1; padding:24px'>Failed to load videos.</div>";
+      }
+    }
+
+    function render(){
+      const q = search.value.trim().toLowerCase();
+      const list = q ? allVideos.filter(v =>
+        (v.title||"").toLowerCase().includes(q) ||
+        (v.genre||"").toLowerCase().includes(q) ||
+        (v.publisher||"").toLowerCase().includes(q)
+      ) : allVideos;
+
+      countEl.textContent = String(list.length);
+
+      const html = list.map(v => `
+        <article class="card">
+          <h3 title="${escape(v.title)}">${escape(v.title)}</h3>
+          <div class="muted" style="font-size:13px;margin-bottom:8px">
+            <span class="pill">${escape(v.publisher||"EduTalk")}</span>
+            <span class="pill">${escape(v.genre||"General")}</span>
+            <span class="pill">Age: ${escape(v.ageRating||"PG")}</span>
+          </div>
+          <div class="muted" style="font-size:12px; margin-bottom:10px">
+            Producer: <strong>${escape(v.producer||"")}</strong> •
+            Added: ${escape(fmt(v.createdAt||Date.now()))}
+          </div>
+          <div class="spc">
+            <a class="btn secondary" href="${escape(v.url)}" target="_blank" rel="noopener">Open Link</a>
+            <button class="btn" data-url="${escape(v.url)}" data-title="${escape(v.title)}"
+              data-meta="Publisher: ${escape(v.publisher||"")}, Genre: ${escape(v.genre||"")}, Age: ${escape(v.ageRating||"")} • ${escape(fmt(v.createdAt||Date.now()))}">
+              ▶ Play
+            </button>
+          </div>
+        </article>
+      `).join("");
+
+      grid.innerHTML = html || "<div class='center muted' style='grid-column:1/-1; padding:24px'>No videos yet.</div>";
+
+      // hook up play buttons
+      grid.querySelectorAll("button.btn").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const url = btn.getAttribute("data-url");
+          modalTitle.textContent = btn.getAttribute("data-title") || "Playing";
+          meta.textContent = btn.getAttribute("data-meta") || "";
+          player.src = url;
+          modal.classList.remove("hidden");
+          player.play().catch(()=>{});
+        });
+      });
+    }
+
+    // --- creator mode ---
+    creatorToggle.addEventListener("click", ()=>{
+      creatorForm.classList.toggle("hidden");
+      creatorToggle.textContent = creatorForm.classList.contains("hidden") ? "Creator Mode" : "Hide Creator";
+    });
+
+    $("#refreshBtn").addEventListener("click", loadVideos);
+    search.addEventListener("input", render);
+
+    // create video
+    createBtn.addEventListener("click", async ()=>{
+      const body = {
+        title: $("#f_title").value.trim(),
+        publisher: $("#f_publisher").value.trim(),
+        producer: $("#f_producer").value.trim(),
+        genre: $("#f_genre").value.trim(),
+        ageRating: $("#f_age").value,
+        url: $("#f_url").value.trim()
+      };
+      if(!body.title || !body.url){
+        showMsg(createMsg, "Title and URL are required.", "err"); return;
+      }
+      try{
+        const headers = {"Content-Type":"application/json"};
+        const key = $("#f_key").value.trim();
+        if(key) headers["x-api-key"] = key;
+
+        const r = await fetch("/api/videos", {method:"POST", headers, body:JSON.stringify(body)});
+        const j = await r.json();
+        if(j.ok){
+          showMsg(createMsg, "Video added successfully.");
+          $("#f_title").value = $("#f_url").value = "";
+          await loadVideos();
+        }else{
+          throw new Error(j.error || "Failed");
+        }
+      }catch(e){
+        showMsg(createMsg, e.message || "Failed to create video.", "err");
+      }
+    });
+
+    // modal controls
+    closeModal.addEventListener("click", ()=>{
+      player.pause(); player.src = ""; modal.classList.add("hidden");
+    });
+    modal.addEventListener("click", (e)=>{
+      if(e.target === modal){ closeModal.click(); }
+    });
+
+    // init
+    fetchHealth();
+    loadVideos();
   </script>
 </body>
 </html>

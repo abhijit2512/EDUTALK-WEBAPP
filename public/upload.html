@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>EduTalk — Upload</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -27,7 +27,7 @@
         <label>Playback URL: <input type="url" name="playbackUrl" placeholder="YouTube link or MP4 URL" required></label><br><br>
         <button type="submit" class="btn">Upload</button>
       </form>
-      <p id="msg" class="muted"></p>
+      <p id="msg" class="muted" style="margin-top:8px"></p>
     </section>
   </main>
 
@@ -37,29 +37,39 @@
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
-      const data = {
-        title: form.title.value,
-        publisher: form.publisher.value,
-        producer: form.producer.value,
-        genre: form.genre.value,
-        age: form.age.value,
-        playbackUrl: form.playbackUrl.value
-      };
-      try {
-   const res = await fetch('/api/videos', {   // <— use the API alias
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(data)
-});
+      const msg = document.getElementById('msg');
 
-        if(res.ok){
-          document.getElementById('msg').textContent = '✅ Video uploaded successfully!';
-          form.reset();
-        } else {
-          document.getElementById('msg').textContent = '❌ Upload failed!';
+      const payload = {
+        title: form.title.value.trim(),
+        publisher: form.publisher.value.trim(),
+        producer: form.producer.value.trim(),
+        genre: form.genre.value.trim(),
+        age: form.age.value.trim(),
+        playbackUrl: form.playbackUrl.value.trim()
+      };
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        // If you set CREATOR_API_KEY in Azure App Settings, also send:
+        // headers['x-api-key'] = 'YOUR_KEY_HERE';
+
+        const res = await fetch('/videos', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
+
+        const text = await res.text();
+        if (!res.ok) {
+          msg.textContent = `❌ Upload failed: ${res.status} ${res.statusText} ${text.slice(0,180)}`;
+          return;
         }
+
+        msg.textContent = '✅ Video uploaded! Redirecting…';
+        setTimeout(()=>location.href='/videos.html', 700);
       } catch (err) {
-        document.getElementById('msg').textContent = '⚠️ Error: ' + err.message;
+        msg.textContent = '⚠️ Error: ' + err.message;
+        console.error(err);
       }
     });
   </script>

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>EduTalk — Home</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/style.css?v=2" />
 </head>
 <body>
   <header class="nav">
@@ -39,9 +39,13 @@
   <footer class="footer">© EduTalk</footer>
 
   <script>
-    function esc(s=''){return String(s)
-      .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
-      .replaceAll('"','&quot;').replaceAll("'","&#39;')}
+    const API_BASE = "https://apivideoshare-d5exf9a9fmhvbjef.canadacentral-01.azurewebsites.net";
+
+    function esc(s=''){
+      return String(s)
+        .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+        .replaceAll('"','&quot;').replaceAll("'","&#39;");
+    }
 
     function ytid(url=''){
       try{
@@ -49,7 +53,8 @@
         if(u.hostname.includes('youtu.be')) return u.pathname.slice(1);
         if(u.hostname.includes('youtube.com')){
           if(u.searchParams.get('v')) return u.searchParams.get('v');
-          const p=u.pathname.split('/'); const i=p.indexOf('embed'); if(i!==-1&&p[i+1]) return p[i+1];
+          const p=u.pathname.split('/');
+          const i=p.indexOf('embed'); if(i!==-1 && p[i+1]) return p[i+1];
         }
       }catch{} return null;
     }
@@ -59,16 +64,30 @@
       const box = document.getElementById('latest');
       const status = document.getElementById('latestStatus');
       try{
-        const res = await fetch('/videos',{headers:{'Accept':'application/json'}});
-        if(!res.ok) throw new Error('HTTP '+res.status);
-        const data = await res.json();
-        const latest = (Array.isArray(data)?data:[]).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0)).slice(0,6);
+        const res = await fetch(`${API_BASE}/videos`, {headers:{'Accept':'application/json'}});
+        const raw = await res.text();
+        if(!res.ok) throw new Error(`HTTP ${res.status} ${raw.slice(0,100)}`);
+
+        let data;
+        try { data = JSON.parse(raw); }
+        catch { throw new Error("Response not JSON: " + raw.slice(0,100)); }
+
+        const latest = (Array.isArray(data)?data:[])
+          .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))
+          .slice(0,6);
+
         if(!latest.length){ status.textContent='No videos yet.'; return; }
+
         box.innerHTML = latest.map(v=>{
           const id = ytid(v.playbackUrl||'');
           const player = id
-            ? `<div class="thumb" style="background-image:url('${ythumb(id)}')" onclick="window.open('https://www.youtube.com/watch?v=${id}','_blank')"><div class="play"></div></div>`
-            : (v.playbackUrl? `<video class="player" src="${esc(v.playbackUrl)}" controls preload="metadata"></video>` : '');
+            ? `<div class="thumb" style="background-image:url('${ythumb(id)}')" 
+                 onclick="window.open('https://www.youtube.com/watch?v=${id}','_blank')">
+                 <div class="play"></div></div>`
+            : (v.playbackUrl
+                ? `<video class="player" src="${esc(v.playbackUrl)}" controls preload="metadata"></video>`
+                : `<div class="player" style="display:flex;align-items:center;justify-content:center;background:#0a0f20;color:#9aa3b2">No preview</div>`);
+
           return `<article class="card">
             ${player}
             <h3 style="margin:8px 0 4px">${esc(v.title||'Untitled')}</h3>
@@ -76,7 +95,7 @@
           </article>`;
         }).join('');
       }catch(e){
-        status.textContent='Could not load latest videos.';
+        status.textContent='⚠️ Could not load latest videos: ' + e.message;
         console.error(e);
       }
     }

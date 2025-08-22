@@ -6,8 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
   <!-- 🔑 Set this to your CREATOR_API_KEY from Azure App Settings -->
-  
-   <meta name="x-api-key" content="CREATOR_API_KEY" />
+  <meta name="x-api-key" content="CREATOR_API_KEY" />
 
   <link rel="stylesheet" href="/style.css?v=7" />
   <style>
@@ -26,6 +25,19 @@
     .row-actions { display:flex; gap:8px; align-items:center; }
     .row-actions .btn { padding:6px 10px; font-size:13px; }
     .row-actions .btn.danger { background:#8a1a1a; }
+
+    /* New: consumer controls */
+    .controls { display:grid; gap:10px; margin-top:10px; }
+    .controls .row { display:flex; gap:8px; align-items:center; }
+    .controls select, .controls button, .controls textarea {
+      padding:8px 10px; border:1px solid #20314f; background:#0a0f20; color:#e8eefc; border-radius:10px;
+    }
+    .controls textarea { min-height:64px; width:100%; resize:vertical; }
+    .controls button { background:#1a3a8a; cursor:pointer; }
+    .controls button.secondary { background:#253a6b; }
+    .rating-line { font-size:13px; margin:8px 0; }
+    .comments { margin-top:10px; border-top:1px dashed #20314f; padding-top:8px; }
+    .comment { font-size:13px; padding:6px 0; border-bottom:1px dashed #182240; }
   </style>
 </head>
 <body>
@@ -74,6 +86,9 @@
         return dt.toLocaleString();
       } catch { return ''; }
     };
+
+    const avg = (arr=[]) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
+    const fmtAvg = (n) => n ? n.toFixed(1) : '—';
 
     // 🔑 read API key from <meta> (or fallback to a global you can set elsewhere)
     function getApiKey() {
@@ -124,6 +139,42 @@
     let ALL = [];         // original list
     let newestFirst = true;
 
+    function commentsHtml(v) {
+      if (!v.comments || !v.comments.length) {
+        return `<div class="muted-sm">No comments yet.</div>`;
+      }
+      // newest first
+      return v.comments.slice().reverse().map(c => {
+        const when = c.createdAt ? ` <span class="muted-sm">(${fmtDate(c.createdAt)})</span>` : '';
+        return `<div class="comment">🗨️ ${esc(c.text)}${when}</div>`;
+      }).join('');
+    }
+
+    function ratingBlock(v) {
+      const a = avg(v.ratings || []);
+      const count = (v.ratings || []).length;
+      const id = esc(v._id);
+      // select gets a unique id so event binding is trivial
+      return `
+        <div class="rating-line">⭐ <b>${fmtAvg(a)}</b> (${count} ratings)</div>
+        <div class="controls">
+          <div class="row">
+            <select id="rate-${id}" aria-label="Rate this video">
+              <option value="">Rate 1–5</option>
+              <option>5</option><option>4</option><option>3</option><option>2</option><option>1</option>
+            </select>
+            <button class="rate-btn" data-id="${id}">Submit Rating</button>
+          </div>
+          <div>
+            <textarea id="cmt-${id}" placeholder="Write a public comment…"></textarea>
+            <div class="row" style="margin-top:6px;">
+              <button class="comment-btn secondary" data-id="${id}">Post Comment</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function card(v){
       const youId  = ytId(v.playbackUrl||'');
       const player = youId
@@ -157,6 +208,15 @@
           ${when ? `<span class="muted-sm">• ${esc(when)}</span>` : ''}
         </div>
         ${player}
+
+        ${ratingBlock(v)}
+
+        <div class="comments" aria-live="polite">
+          <h4 class="muted-sm" style="margin:8px 0 6px;">Comments</h4>
+          <div class="comments-list">
+            ${commentsHtml(v)}
+          </div>
+        </div>
       </article>`;
     }
 
@@ -193,6 +253,9 @@
       // status line
       const status = document.getElementById('status');
       status.textContent = `${list.length} of ${ALL.length} video(s)`;
+
+      // wire up rating/comment buttons for the current DOM
+      bindInteractions();
     }
 
     /*******************
@@ -263,6 +326,59 @@
       }
     }
 
+    async function submitRating(id, value, btn) {
+      if (!value) { alert('Please select a rating 1–5.'); return; }
+      btn && (btn.disabled = true);
+      try {
+        const res = await fetch(`/videos/${encodeURIComponent(id)}/ratings`, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({ value: Number(value) })
+        });
+        const txt = await res.text();
+        if (!res.ok) throw new Error((JSON.parse(txt).error)||txt);
+        const updated = JSON.parse(txt);
+        replaceCard(updated);
+      } catch (e) {
+        alert('Rating failed: ' + e.message);
+      } finally {
+        btn && (btn.disabled = false);
+      }
+    }
+
+    async function submitComment(id, text, btn) {
+      const t = (text||'').trim();
+      if (!t) { alert('Comment cannot be empty.'); return; }
+      btn && (btn.disabled = true);
+      try {
+        const res = await fetch(`/videos/${encodeURIComponent(id)}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({ text: t })
+        });
+        const txt = await res.text();
+        if (!res.ok) throw new Error((JSON.parse(txt).error)||txt);
+        const updated = JSON.parse(txt);
+        replaceCard(updated);
+      } catch (e) {
+        alert('Comment failed: ' + e.message);
+      } finally {
+        btn && (btn.disabled = false);
+      }
+    }
+
+    function replaceCard(v) {
+      const wrap = document.getElementById('list');
+      const node = wrap.querySelector(`article.card[data-id="${CSS.escape(v._id)}"]`);
+      if (!node) return;
+      node.outerHTML = card(v);
+      // re-bind for the replaced node
+      bindInteractions();
+      // also update in-memory ALL for future renders
+      const idx = ALL.findIndex(x => x._id === v._id);
+      if (idx !== -1) ALL[idx] = v;
+    }
+
     /*******************
      * Bootstrap + UI wiring
      *******************/
@@ -275,6 +391,26 @@
       applyFilter();
     });
     document.getElementById('delYT').addEventListener('click', deleteAllYouTube);
+
+    function bindInteractions() {
+      const wrap = document.getElementById('list');
+      // ratings
+      wrap.querySelectorAll('.rate-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const sel = document.getElementById(`rate-${id}`);
+          submitRating(id, sel && sel.value, btn);
+        });
+      });
+      // comments
+      wrap.querySelectorAll('.comment-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const ta = document.getElementById(`cmt-${id}`);
+          submitComment(id, ta && ta.value, btn);
+        });
+      });
+    }
 
     // expose for inline onclick
     window.deleteVideo = deleteVideo;

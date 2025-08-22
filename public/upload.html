@@ -4,7 +4,13 @@
   <meta charset="utf-8" />
   <title>EduTalk — Upload</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=8" />
+  <link rel="stylesheet" href="/style.css?v=9" />
+
+  <!-- OPTIONAL: Put your Azure Blob *Container SAS URL* here to enable desktop uploads.
+       Example: https://stvideosedutalk.blob.core.windows.net/videos?<SAS>
+       Leave empty to hide the desktop file UI. -->
+  <meta name="blob-container-sas" content="PUT_YOUR_CONTAINER_SAS_URL_HERE" />
+
   <style>
     .muted{color:#9aa3b2}
     .field{display:grid;gap:6px;margin:10px 0}
@@ -15,6 +21,8 @@
     .btn.danger{background:#8a1a1a}
     .badge{font-size:12px;padding:2px 8px;background:#13213b;color:#a9b6d3;border-radius:999px}
     .card h2{margin:0 0 8px}
+    .small{font-size:12px}
+    .pill{padding:2px 8px;border-radius:999px;border:1px dashed #20314f}
   </style>
 </head>
 <body>
@@ -39,7 +47,7 @@
     </div>
 
     <!-- Creator-only form -->
-    <form id="formWrap" style="display:none;max-width:560px">
+    <form id="formWrap" style="display:none;max-width:680px">
       <div class="field">
         <label>Title</label>
         <input id="title" placeholder="e.g., Algebra Basics" />
@@ -65,14 +73,27 @@
         </div>
       </div>
 
-      <!-- Keep it simple: just paste the final playback URL (YouTube link or MP4 URL) -->
+      <!-- (A) Paste final playback URL (works for YouTube or public blob URLs) -->
       <div class="field">
         <label>Playback URL (YouTube link or direct MP4/WebM/Ogg URL)</label>
         <input id="playbackUrl" placeholder="https://... (YouTube or blob URL)" />
       </div>
 
-      <div class="row">
-        <button class="btn" id="btnSubmit" type="submit">Upload</button>
+      <!-- (B) OPTIONAL desktop upload to Azure Blob (shown only if container SAS is provided) -->
+      <div id="blobArea" class="field" style="display:none">
+        <label>Upload from Desktop <span class="pill small">Azure Blob</span></label>
+        <div class="row">
+          <input id="filePick" type="file" accept="video/mp4,video/webm,video/ogg" />
+          <button id="btnBlobUpload" class="btn" type="button">Upload Video File</button>
+          <span id="blobStatus" class="muted small"></span>
+        </div>
+        <div class="small muted">
+          After upload, the <b>Playback URL</b> will be filled automatically. (Your container must allow public read, which you already set to <i>Blob (anonymous read)</i>.)
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:6px">
+        <button class="btn" id="btnSubmit" type="submit">Save to EduTalk</button>
         <span id="status" class="muted"></span>
       </div>
     </form>
@@ -153,7 +174,51 @@
     document.getElementById("gateMsg").style.display  = isCreator ? "none"  : "block";
   }
 
-  // ===== Upload (Creator only) =====
+  // ===== Desktop upload to Azure Blob (via Container SAS) =====
+  const containerSas = (document.querySelector('meta[name="blob-container-sas"]')?.content || '').trim();
+  const blobArea = document.getElementById("blobArea");
+  if (containerSas && /^https?:\/\//i.test(containerSas)) {
+    blobArea.style.display = "block";
+  }
+
+  function parseContainerInfo(containerSasUrl){
+    // Example: https://account.blob.core.windows.net/videos?<SAS>
+    try{
+      const u = new URL(containerSasUrl);
+      const account = u.hostname.split('.')[0];
+      const container = u.pathname.replace(/^\//,'').split('/')[0];
+      const qs = u.search; // includes leading '?'
+      const base = `https://${account}.blob.core.windows.net/${container}`;
+      return { account, container, query: qs, base };
+    }catch{
+      return null;
+    }
+  }
+
+  async function uploadToBlobWithSas(file){
+    const info = parseContainerInfo(containerSas);
+    if (!info) throw new Error("Invalid container SAS URL.");
+    // We upload to: base + '/' + filename + SAS
+    const safeName = file.name.replace(/[^\w.\- ]+/g,'_'); // rudimentary cleanup
+    const putUrl = `${info.base}/${encodeURIComponent(safeName)}${info.query}`;
+    const res = await fetch(putUrl, {
+      method: "PUT",
+      headers: {
+        "x-ms-blob-type": "BlockBlob",
+        "x-ms-version": "2021-12-02",
+        "Content-Type": file.type || "application/octet-stream"
+      },
+      body: file
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Blob upload failed: ${res.status} ${res.statusText} — ${txt.slice(0,180)}`);
+    }
+    // The public (read) URL (no SAS needed because container is Public: Blob)
+    return `${info.base}/${encodeURIComponent(safeName)}`;
+  }
+
+  // ===== Save metadata to EduTalk (Creator only) =====
   async function submitForm(e){
     e.preventDefault();
     const status = document.getElementById("status");
@@ -179,7 +244,7 @@
 
     try{
       document.getElementById("btnSubmit").disabled = true;
-      status.textContent = "Uploading…";
+      status.textContent = "Saving…";
       const res = await fetch("/videos",{
         method:"POST",
         headers: { ...authz({"Content-Type":"application/json"}) },
@@ -187,14 +252,13 @@
       });
       const txt = await res.text();
       if(!res.ok){
-        status.textContent = `Upload failed: ${res.status} ${res.statusText} — ${(txt||"").slice(0,180)}`;
+        status.textContent = `Save failed: ${res.status} ${res.statusText} — ${(txt||"").slice(0,180)}`;
         return;
       }
-      status.textContent = "Uploaded ✓";
-      // optional: redirect to videos
+      status.textContent = "Saved ✓";
       // window.location.href = "/videos.html";
     }catch(e){
-      status.textContent = "Upload error: "+e.message;
+      status.textContent = "Save error: "+e.message;
     }finally{
       document.getElementById("btnSubmit").disabled = false;
     }
@@ -210,6 +274,23 @@
     document.getElementById("btnSignOut").addEventListener("click", signOut);
     document.getElementById("btnRole").addEventListener("click", switchRole);
     document.getElementById("formWrap").addEventListener("submit", submitForm);
+
+    if (blobArea.style.display !== "none") {
+      const blobStatus = document.getElementById("blobStatus");
+      document.getElementById("btnBlobUpload").addEventListener("click", async ()=>{
+        const file = document.getElementById("filePick").files?.[0];
+        if (!file) { blobStatus.textContent = "Choose a file first."; return; }
+        try{
+          blobStatus.textContent = "Uploading to Azure Blob…";
+          const url = await uploadToBlobWithSas(file);
+          // Fill playback URL with the public blob URL
+          document.getElementById("playbackUrl").value = url;
+          blobStatus.textContent = "Uploaded ✓";
+        }catch(e){
+          blobStatus.textContent = e.message;
+        }
+      });
+    }
   })();
 </script>
 </body>

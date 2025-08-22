@@ -5,12 +5,11 @@
   <title>Latest Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-  <!-- 🔑 Set this to your CREATOR_API_KEY from Azure App Settings -->
+  <!-- (legacy) API key header; safe to keep, backend now uses JWT + app roles -->
   <meta name="x-api-key" content="CREATOR_API_KEY" />
 
   <link rel="stylesheet" href="/style.css?v=7" />
   <style>
-    /* small, local tweaks that won’t fight your style.css */
     .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0 14px; }
     .toolbar input[type="search"]{ padding:8px 10px; border:1px solid #20314f; background:#0a0f20; color:#e8eefc; border-radius:8px; min-width:240px; }
     .toolbar .btn { padding:8px 12px; background:#1a3a8a; color:#fff; border-radius:8px; text-decoration:none; display:inline-flex; gap:6px; align-items:center; border:none; cursor:pointer; }
@@ -26,7 +25,7 @@
     .row-actions .btn { padding:6px 10px; font-size:13px; }
     .row-actions .btn.danger { background:#8a1a1a; }
 
-    /* New: consumer controls */
+    /* consumer controls */
     .controls { display:grid; gap:10px; margin-top:10px; }
     .controls .row { display:flex; gap:8px; align-items:center; }
     .controls select, .controls button, .controls textarea {
@@ -43,9 +42,11 @@
 <body>
   <header class="nav">
     <h1><a href="/" style="color:inherit;text-decoration:none">EduTalk VideoShare</a></h1>
-    <nav>
-      <a href="/.auth/login/aad">Sign in</a>
-      <a href="/.auth/logout">Sign out</a>
+    <nav style="display:flex;gap:10px;align-items:center">
+      <span class="badge" id="roleBadge">Guest</span>
+      <button id="btnRole" class="btn secondary" type="button" style="display:none" title="Switch between Consumer and Creator">Switch Role</button>
+      <button id="btnSignIn"  class="btn" type="button">Sign in</button>
+      <button id="btnSignOut" class="btn danger" type="button" style="display:none">Sign out</button>
       <a href="/videos.html">All Videos</a>
       <a href="/upload.html">Upload</a>
     </nav>
@@ -71,6 +72,95 @@
 
   <footer class="footer">© EduTalk</footer>
 
+  <!-- MSAL login -->
+  <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+
+  <script>
+    /*******************
+     * Auth (MSAL) + role switch
+     *******************/
+    // TODO: set these to your real values
+    const TENANT_ID = "YOUR_TENANT_ID";
+    const CLIENT_ID = "YOUR_CLIENT_ID";
+
+    const msalInstance = new msal.PublicClientApplication({
+      auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: window.location.origin },
+      cache: { cacheLocation: "localStorage" }
+    });
+
+    let ID_TOKEN = localStorage.getItem("EDUTALK_ID_TOKEN") || null;
+    let ME = null; // {oid,email,name,role}
+
+    async function signIn() {
+      const login = await msalInstance.loginPopup({ scopes: ["openid","profile","email"] });
+      const account = login.account;
+      const tokenResp = await msalInstance.acquireTokenSilent({ account, scopes: ["openid","profile","email"] });
+      ID_TOKEN = tokenResp.idToken;
+      localStorage.setItem("EDUTALK_ID_TOKEN", ID_TOKEN);
+      await refreshMe();
+      renderAuthUI();
+    }
+
+    async function signOut() {
+      localStorage.removeItem("EDUTALK_ID_TOKEN");
+      ID_TOKEN = null;
+      ME = null;
+      try { await msalInstance.logoutPopup(); } catch {}
+      renderAuthUI();
+    }
+
+    function authz(extra = {}) {
+      const t = ID_TOKEN || localStorage.getItem("EDUTALK_ID_TOKEN") || "";
+      return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+    }
+
+    async function refreshMe() {
+      try {
+        const res = await fetch("/me", { headers: authz({ Accept: "application/json" }) });
+        if (res.ok) {
+          const j = await res.json();
+          ME = j?.user || null;
+        } else {
+          ME = null;
+        }
+      } catch { ME = null; }
+      updateRoleBadge();
+    }
+
+    function updateRoleBadge() {
+      const b = document.getElementById("roleBadge");
+      b.textContent = ME ? ME.role : "Guest";
+      const btnRole = document.getElementById("btnRole");
+      // show role switch only when signed in
+      btnRole.style.display = ME ? "inline-flex" : "none";
+      btnRole.textContent = ME && ME.role === "Creator" ? "Switch to Consumer" : "Switch to Creator";
+    }
+
+    async function switchRole() {
+      if (!ME) return alert("Please sign in first.");
+      const target = ME.role === "Creator" ? "Consumer" : "Creator";
+      const res = await fetch("/me/role", {
+        method: "POST",
+        headers: authz({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ role: target })
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        alert("Role change failed: " + t.slice(0,200));
+        return;
+      }
+      await refreshMe();
+      // no need to reload; delete buttons will work server-side based on role
+    }
+
+    function renderAuthUI() {
+      const signedIn = !!(ID_TOKEN || localStorage.getItem("EDUTALK_ID_TOKEN"));
+      document.getElementById("btnSignIn").style.display = signedIn ? "none" : "inline-flex";
+      document.getElementById("btnSignOut").style.display = signedIn ? "inline-flex" : "none";
+      updateRoleBadge();
+    }
+  </script>
+
   <script>
     /*******************
      * Utilities
@@ -80,22 +170,18 @@
       .replaceAll('"','&quot;').replaceAll("'","&#39;");
 
     const fmtDate = (d) => {
-      try {
-        const dt = new Date(d);
-        if (isNaN(+dt)) return '';
-        return dt.toLocaleString();
-      } catch { return ''; }
+      try { const dt = new Date(d); if (isNaN(+dt)) return ''; return dt.toLocaleString(); } catch { return ''; }
     };
 
     const avg = (arr=[]) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
     const fmtAvg = (n) => n ? n.toFixed(1) : '—';
 
-    // 🔑 read API key from <meta> (or fallback to a global you can set elsewhere)
+    // legacy API key (optional)
     function getApiKey() {
       const meta = document.querySelector('meta[name="x-api-key"]');
       return (meta && meta.content) || (window.EDUTALK_API_KEY || '').trim();
     }
-    function authHeaders(extra = {}) {
+    function apiKeyHeaders(extra = {}) {
       const key = getApiKey();
       return key ? { ...extra, 'x-api-key': key } : extra;
     }
@@ -107,8 +193,7 @@
         if (u.hostname.includes('youtu.be')) return u.pathname.slice(1);
         if (u.hostname.includes('youtube.com')) {
           if (u.searchParams.get('v')) return u.searchParams.get('v');
-          const parts = u.pathname.split('/');
-          const i = parts.indexOf('embed');
+          const parts = u.pathname.split('/'); const i = parts.indexOf('embed');
           if (i !== -1 && parts[i+1]) return parts[i+1];
         }
       } catch {}
@@ -124,7 +209,6 @@
                 referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
     }
 
-    // Guess mime type from extension (helps the <video> element)
     function guessType(url=''){
       const u = url.split('?')[0].toLowerCase();
       if (u.endsWith('.mp4'))  return 'video/mp4';
@@ -136,14 +220,11 @@
     /*******************
      * Rendering
      *******************/
-    let ALL = [];         // original list
+    let ALL = [];
     let newestFirst = true;
 
     function commentsHtml(v) {
-      if (!v.comments || !v.comments.length) {
-        return `<div class="muted-sm">No comments yet.</div>`;
-      }
-      // newest first
+      if (!v.comments || !v.comments.length) return `<div class="muted-sm">No comments yet.</div>`;
       return v.comments.slice().reverse().map(c => {
         const when = c.createdAt ? ` <span class="muted-sm">(${fmtDate(c.createdAt)})</span>` : '';
         return `<div class="comment">🗨️ ${esc(c.text)}${when}</div>`;
@@ -154,7 +235,6 @@
       const a = avg(v.ratings || []);
       const count = (v.ratings || []).length;
       const id = esc(v._id);
-      // select gets a unique id so event binding is trivial
       return `
         <div class="rating-line">⭐ <b>${fmtAvg(a)}</b> (${count} ratings)</div>
         <div class="controls">
@@ -208,14 +288,10 @@
           ${when ? `<span class="muted-sm">• ${esc(when)}</span>` : ''}
         </div>
         ${player}
-
         ${ratingBlock(v)}
-
         <div class="comments" aria-live="polite">
           <h4 class="muted-sm" style="margin:8px 0 6px;">Comments</h4>
-          <div class="comments-list">
-            ${commentsHtml(v)}
-          </div>
+          <div class="comments-list">${commentsHtml(v)}</div>
         </div>
       </article>`;
     }
@@ -232,9 +308,7 @@
 
       if (q) {
         list = list.filter(v => {
-          const hay = [
-            v.title, v.publisher, v.producer, v.genre, v.age
-          ].map(x => (x||'').toLowerCase()).join(' ');
+          const hay = [v.title, v.publisher, v.producer, v.genre, v.age].map(x => (x||'').toLowerCase()).join(' ');
           return hay.includes(q);
         });
       }
@@ -242,19 +316,12 @@
       const wrap = document.getElementById('list');
       const empty = document.getElementById('empty');
 
-      if (!list.length) {
-        wrap.innerHTML = '';
-        empty.style.display = 'block';
-      } else {
-        empty.style.display = 'none';
-        wrap.innerHTML = list.map(card).join('');
-      }
+      if (!list.length) { wrap.innerHTML = ''; empty.style.display = 'block'; }
+      else { empty.style.display = 'none'; wrap.innerHTML = list.map(card).join(''); }
 
-      // status line
       const status = document.getElementById('status');
       status.textContent = `${list.length} of ${ALL.length} video(s)`;
 
-      // wire up rating/comment buttons for the current DOM
       bindInteractions();
     }
 
@@ -265,9 +332,7 @@
       const status = document.getElementById('status');
       try {
         status.textContent = 'Loading…';
-        const res = await fetch('/videos?ts=' + Date.now(), {
-          headers: { 'Accept':'application/json','Cache-Control':'no-cache' }
-        });
+        const res = await fetch('/videos?ts=' + Date.now(), { headers: { 'Accept':'application/json','Cache-Control':'no-cache' } });
         const txt = await res.text();
         if (!res.ok) { status.textContent = `HTTP ${res.status}: ${txt.slice(0,160)}`; return; }
         let data; try { data = JSON.parse(txt); } catch { status.textContent = 'Invalid JSON'; return; }
@@ -287,7 +352,7 @@
         status.textContent = 'Deleting…';
         const res = await fetch(`/videos/${encodeURIComponent(id)}`, {
           method: 'DELETE',
-          headers: authHeaders({ 'Content-Type': 'application/json' })
+          headers: { ...apiKeyHeaders({ 'Content-Type': 'application/json' }), ...authz() }
         });
         const txt = await res.text();
         if (!res.ok) {
@@ -310,7 +375,7 @@
         status.textContent = 'Bulk deleting…';
         const res = await fetch('/videos?provider=youtube', {
           method: 'DELETE',
-          headers: authHeaders({ 'Content-Type': 'application/json' })
+          headers: { ...apiKeyHeaders({ 'Content-Type': 'application/json' }), ...authz() }
         });
         const txt = await res.text();
         if (!res.ok) {
@@ -339,11 +404,8 @@
         if (!res.ok) throw new Error((JSON.parse(txt).error)||txt);
         const updated = JSON.parse(txt);
         replaceCard(updated);
-      } catch (e) {
-        alert('Rating failed: ' + e.message);
-      } finally {
-        btn && (btn.disabled = false);
-      }
+      } catch (e) { alert('Rating failed: ' + e.message); }
+      finally { btn && (btn.disabled = false); }
     }
 
     async function submitComment(id, text, btn) {
@@ -360,11 +422,8 @@
         if (!res.ok) throw new Error((JSON.parse(txt).error)||txt);
         const updated = JSON.parse(txt);
         replaceCard(updated);
-      } catch (e) {
-        alert('Comment failed: ' + e.message);
-      } finally {
-        btn && (btn.disabled = false);
-      }
+      } catch (e) { alert('Comment failed: ' + e.message); }
+      finally { btn && (btn.disabled = false); }
     }
 
     function replaceCard(v) {
@@ -372,9 +431,7 @@
       const node = wrap.querySelector(`article.card[data-id="${CSS.escape(v._id)}"]`);
       if (!node) return;
       node.outerHTML = card(v);
-      // re-bind for the replaced node
       bindInteractions();
-      // also update in-memory ALL for future renders
       const idx = ALL.findIndex(x => x._id === v._id);
       if (idx !== -1) ALL[idx] = v;
     }
@@ -382,19 +439,31 @@
     /*******************
      * Bootstrap + UI wiring
      *******************/
-    (async () => { await refreshList(); })();
+    (async () => {
+      // auth UI boot
+      renderAuthUI();
+      if (ID_TOKEN) await refreshMe();
 
-    document.getElementById('q').addEventListener('input', applyFilter);
-    document.getElementById('sortBtn').addEventListener('click', (e)=>{
-      newestFirst = !newestFirst;
-      e.currentTarget.textContent = newestFirst ? 'Sort: Newest ↓' : 'Sort: Oldest ↑';
-      applyFilter();
-    });
-    document.getElementById('delYT').addEventListener('click', deleteAllYouTube);
+      // list
+      await refreshList();
+
+      // header buttons
+      document.getElementById('btnSignIn').addEventListener('click', signIn);
+      document.getElementById('btnSignOut').addEventListener('click', signOut);
+      document.getElementById('btnRole').addEventListener('click', switchRole);
+
+      // toolbar
+      document.getElementById('q').addEventListener('input', applyFilter);
+      document.getElementById('sortBtn').addEventListener('click', (e)=>{
+        newestFirst = !newestFirst;
+        e.currentTarget.textContent = newestFirst ? 'Sort: Newest ↓' : 'Sort: Oldest ↑';
+        applyFilter();
+      });
+      document.getElementById('delYT').addEventListener('click', deleteAllYouTube);
+    })();
 
     function bindInteractions() {
       const wrap = document.getElementById('list');
-      // ratings
       wrap.querySelectorAll('.rate-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');
@@ -402,7 +471,6 @@
           submitRating(id, sel && sel.value, btn);
         });
       });
-      // comments
       wrap.querySelectorAll('.comment-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');

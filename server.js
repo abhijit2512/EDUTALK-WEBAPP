@@ -119,30 +119,35 @@ app.post("/videos", requireCreatorApiKey, async (req, res) => {
   }
 });
 
+// ✅ comments: ensure createdAt is stored; handle invalid IDs cleanly
 app.post("/videos/:id/comments", async (req, res) => {
   try {
     const t = (req.body?.text || "").trim();
     if (!t) return res.status(400).json({ ok: false, error: "text required" });
+
     const v = await Video.findByIdAndUpdate(
       req.params.id,
-      { $push: { comments: { text: t } } },
+      { $push: { comments: { text: t, createdAt: new Date() } } },
       { new: true }
     );
     if (!v) return res.status(404).json({ ok: false, error: "not found" });
     res.json(expose(v));
   } catch (e) {
+    if (e?.name === "CastError") {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
     console.error("Comment error:", e);
     res.status(500).json({ ok: false, error: "Failed to add comment" });
   }
 });
 
+// ✅ ratings: validate range; handle invalid IDs cleanly
 app.post("/videos/:id/ratings", async (req, res) => {
   try {
     const val = Number(req.body?.value);
     if (!Number.isFinite(val) || val < 1 || val > 5)
-      return res
-        .status(400)
-        .json({ ok: false, error: "value must be 1..5" });
+      return res.status(400).json({ ok: false, error: "value must be 1..5" });
+
     const v = await Video.findByIdAndUpdate(
       req.params.id,
       { $push: { ratings: val } },
@@ -151,6 +156,9 @@ app.post("/videos/:id/ratings", async (req, res) => {
     if (!v) return res.status(404).json({ ok: false, error: "not found" });
     res.json(expose(v));
   } catch (e) {
+    if (e?.name === "CastError") {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
     console.error("Rating error:", e);
     res.status(500).json({ ok: false, error: "Failed to add rating" });
   }
@@ -167,6 +175,9 @@ app.delete("/videos/:id", requireCreatorApiKey, async (req, res) => {
     if (!v) return res.status(404).json({ ok: false, error: "not found" });
     res.json({ ok: true });
   } catch (e) {
+    if (e?.name === "CastError") {
+      return res.status(400).json({ ok: false, error: "invalid id" });
+    }
     console.error("Delete error:", e);
     res.status(500).json({ ok: false, error: "Failed to delete" });
   }

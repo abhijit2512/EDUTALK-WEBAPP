@@ -4,10 +4,7 @@
   <meta charset="utf-8" />
   <title>Latest Videos — EduTalk</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-
-  <!-- (legacy) API key header; safe to keep, backend now uses JWT + app roles -->
   <meta name="x-api-key" content="CREATOR_API_KEY" />
-
   <link rel="stylesheet" href="/style.css?v=7" />
   <style>
     .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0 14px; }
@@ -24,8 +21,6 @@
     .row-actions { display:flex; gap:8px; align-items:center; }
     .row-actions .btn { padding:6px 10px; font-size:13px; }
     .row-actions .btn.danger { background:#8a1a1a; }
-
-    /* consumer controls */
     .controls { display:grid; gap:10px; margin-top:10px; }
     .controls .row { display:flex; gap:8px; align-items:center; }
     .controls select, .controls button, .controls textarea {
@@ -72,48 +67,67 @@
 
   <footer class="footer">© EduTalk</footer>
 
-  <!-- MSAL login -->
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
-
   <script>
-    /*******************
-     * Auth (MSAL) + role switch
-     *******************/
-    // 👉 Put your real Entra IDs here:
+    /***************
+     * Auth (MSAL)
+     ***************/
     const TENANT_ID = "b0e4c77a-c53c-4cbc-8f97-72baebc755dd";
     const CLIENT_ID = "7eaa59ec-154f-4bd9-8abd-fd453b0b1d76";
 
     const msalInstance = new msal.PublicClientApplication({
-      auth: { clientId: CLIENT_ID, authority: `https://login.microsoftonline.com/${TENANT_ID}`, redirectUri: window.location.origin },
-      cache: { cacheLocation: "localStorage" }
+      auth: {
+        clientId: CLIENT_ID,
+        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+        redirectUri: window.location.origin
+      },
+      cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false }
     });
 
+    // Clear any pending interaction so we don't get "interaction_in_progress"
+    // (safe for popup or redirect flows).
+    msalInstance.handleRedirectPromise().catch(() => { /* ignore */ });
+
     let ID_TOKEN = localStorage.getItem("EDUTALK_ID_TOKEN") || null;
-    let ME = null; // {oid,email,name,role}
+    let ME = null;
+    let authInFlight = false; // <— debounce guard
+
+    function setSignInBusy(busy) {
+      const btn = document.getElementById('btnSignIn');
+      btn.disabled = busy;
+      btn.textContent = busy ? 'Signing in…' : 'Sign in';
+    }
 
     async function signIn() {
+      if (authInFlight) return;
+      authInFlight = true;
+      setSignInBusy(true);
       try {
         const login = await msalInstance.loginPopup({ scopes: ["openid","profile","email"] });
-        const account = login.account;
+        const account = login.account || (msalInstance.getAllAccounts()[0] || null);
         const tokenResp = await msalInstance.acquireTokenSilent({ account, scopes: ["openid","profile","email"] });
         ID_TOKEN = tokenResp.idToken;
         localStorage.setItem("EDUTALK_ID_TOKEN", ID_TOKEN);
         await refreshMe();
         renderAuthUI();
-        // refresh list so delete/purge visibility updates
-        await refreshList();
+        await refreshList(); // update creator-only buttons immediately
       } catch (e) {
-        alert("Sign in failed: " + (e.message || e));
+        alert("Sign in failed: " + (e && e.message ? e.message : e));
+      } finally {
+        authInFlight = false;
+        setSignInBusy(false);
       }
     }
 
     async function signOut() {
+      try {
+        const acct = msalInstance.getAllAccounts()[0];
+        await msalInstance.logoutPopup(acct ? { account: acct } : {});
+      } catch {}
       localStorage.removeItem("EDUTALK_ID_TOKEN");
       ID_TOKEN = null;
       ME = null;
-      try { await msalInstance.logoutPopup(); } catch {}
       renderAuthUI();
-      // hide creator-only actions after signout
       applyCreatorVisibility();
     }
 
@@ -125,12 +139,7 @@
     async function refreshMe() {
       try {
         const res = await fetch("/me", { headers: authz({ Accept: "application/json" }) });
-        if (res.ok) {
-          const j = await res.json();
-          ME = j?.user || null;
-        } else {
-          ME = null;
-        }
+        ME = res.ok ? (await res.json()).user : null;
       } catch { ME = null; }
       updateRoleBadge();
     }
@@ -139,22 +148,9 @@
       const b = document.getElementById("roleBadge");
       b.textContent = ME ? ME.role : "Guest";
       const btnRole = document.getElementById("btnRole");
-      const isSigned = !!ME;
-      btnRole.style.display = isSigned ? "inline-flex" : "none";
+      btnRole.style.display = ME ? "inline-flex" : "none";
       btnRole.textContent = ME && ME.role === "Creator" ? "Switch to Consumer" : "Switch to Creator";
       applyCreatorVisibility();
-    }
-
-    function applyCreatorVisibility() {
-      // Hide/show any elements with class "only-creator" (toolbar purge button + per-card delete)
-      const isCreator = ME && ME.role === "Creator";
-      document.querySelectorAll(".only-creator").forEach(el => {
-        el.style.display = isCreator ? "" : "none";
-      });
-      // Also toggle delete buttons inside cards
-      document.querySelectorAll('[data-role="delete-btn"]').forEach(el => {
-        el.style.display = isCreator ? "" : "none";
-      });
     }
 
     async function switchRole() {
@@ -166,12 +162,9 @@
         body: JSON.stringify({ role: target })
       });
       if (!res.ok) {
-        const t = await res.text();
-        alert("Role change failed: " + t.slice(0,200));
-        return;
+        const t = await res.text(); alert("Role change failed: " + t.slice(0,200)); return;
       }
       await refreshMe();
-      // server enforces; we also re-render visibility
       applyCreatorVisibility();
     }
 
@@ -181,24 +174,29 @@
       document.getElementById("btnSignOut").style.display = signedIn ? "inline-flex" : "none";
       updateRoleBadge();
     }
+
+    function applyCreatorVisibility() {
+      const isCreator = ME && ME.role === "Creator";
+      document.querySelectorAll(".only-creator").forEach(el => {
+        el.style.display = isCreator ? "" : "none";
+      });
+      document.querySelectorAll('[data-role="delete-btn"]').forEach(el => {
+        el.style.display = isCreator ? "" : "none";
+      });
+    }
   </script>
 
   <script>
-    /*******************
+    /***************
      * Utilities
-     *******************/
+     ***************/
     const esc = (s='') => String(s)
       .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
       .replaceAll('"','&quot;').replaceAll("'","&#39;");
-
-    const fmtDate = (d) => {
-      try { const dt = new Date(d); if (isNaN(+dt)) return ''; return dt.toLocaleString(); } catch { return ''; }
-    };
-
+    const fmtDate = (d) => { try { const dt = new Date(d); return isNaN(+dt) ? '' : dt.toLocaleString(); } catch { return ''; } };
     const avg = (arr=[]) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
     const fmtAvg = (n) => n ? n.toFixed(1) : '—';
 
-    // legacy API key (optional)
     function getApiKey() {
       const meta = document.querySelector('meta[name="x-api-key"]');
       return (meta && meta.content) || (window.EDUTALK_API_KEY || '').trim();
@@ -208,7 +206,6 @@
       return key ? { ...extra, 'x-api-key': key } : extra;
     }
 
-    // YouTube helpers
     function ytId(url='') {
       try {
         const u = new URL(url);
@@ -221,7 +218,6 @@
       } catch {}
       return null;
     }
-
     function ytEmbed(id){
       const src = `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
       const poster = `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
@@ -230,7 +226,6 @@
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
     }
-
     function guessType(url=''){
       const u = url.split('?')[0].toLowerCase();
       if (u.endsWith('.mp4'))  return 'video/mp4';
@@ -239,9 +234,9 @@
       return 'video/mp4';
     }
 
-    /*******************
+    /***************
      * Rendering
-     *******************/
+     ***************/
     let ALL = [];
     let newestFirst = true;
 
@@ -345,13 +340,12 @@
       status.textContent = `${list.length} of ${ALL.length} video(s)`;
 
       bindInteractions();
-      // make sure creator-only buttons match current role
       applyCreatorVisibility();
     }
 
-    /*******************
+    /***************
      * Data + actions
-     *******************/
+     ***************/
     async function refreshList() {
       const status = document.getElementById('status');
       try {
@@ -461,23 +455,18 @@
       applyCreatorVisibility();
     }
 
-    /*******************
-     * Bootstrap + UI wiring
-     *******************/
+    /***************
+     * Bootstrap
+     ***************/
     (async () => {
-      // auth UI boot
       renderAuthUI();
       if (ID_TOKEN) await refreshMe();
-
-      // list
       await refreshList();
 
-      // header buttons
       document.getElementById('btnSignIn').addEventListener('click', signIn);
       document.getElementById('btnSignOut').addEventListener('click', signOut);
       document.getElementById('btnRole').addEventListener('click', switchRole);
 
-      // toolbar
       document.getElementById('q').addEventListener('input', applyFilter);
       document.getElementById('sortBtn').addEventListener('click', (e)=>{
         newestFirst = !newestFirst;

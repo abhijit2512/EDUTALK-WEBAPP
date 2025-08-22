@@ -4,10 +4,12 @@
   <meta charset="utf-8" />
   <title>EduTalk — Upload</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/style.css?v=9" />
+  <link rel="stylesheet" href="/style.css?v=10" />
 
-  <!-- OPTIONAL: Put your Azure Blob *Container SAS URL* here to enable desktop uploads.
-       Example: https://stvideosedutalk.blob.core.windows.net/videos?<SAS>
+  <!-- REQUIRED for desktop uploads:
+       Put your Azure Blob *Container SAS URL* (to your 'videos' container) here.
+       Example:
+       https://stvideosedutalk.blob.core.windows.net/videos?<SAS>
        Leave empty to hide the desktop file UI. -->
   <meta name="blob-container-sas" content="PUT_YOUR_CONTAINER_SAS_URL_HERE" />
 
@@ -23,6 +25,11 @@
     .card h2{margin:0 0 8px}
     .small{font-size:12px}
     .pill{padding:2px 8px;border-radius:999px;border:1px dashed #20314f}
+    .progress-wrap{display:none;align-items:center;gap:8px}
+    .progress{appearance:none;width:220px;height:10px;border-radius:999px;overflow:hidden;background:#14213d}
+    .progress::-webkit-progress-bar{background:#14213d}
+    .progress::-webkit-progress-value{background:#3b82f6}
+    .progress::-moz-progress-bar{background:#3b82f6}
   </style>
 </head>
 <body>
@@ -83,12 +90,19 @@
       <div id="blobArea" class="field" style="display:none">
         <label>Upload from Desktop <span class="pill small">Azure Blob</span></label>
         <div class="row">
-          <input id="filePick" type="file" accept="video/mp4,video/webm,video/ogg" />
+          <input id="filePick" type="file" accept="video/*" />
           <button id="btnBlobUpload" class="btn" type="button">Upload Video File</button>
           <span id="blobStatus" class="muted small"></span>
         </div>
+
+        <div class="progress-wrap" id="progressWrap">
+          <progress id="prog" class="progress" max="100" value="0"></progress>
+          <span id="progText" class="small muted">0%</span>
+        </div>
+
         <div class="small muted">
-          After upload, the <b>Playback URL</b> will be filled automatically. (Your container must allow public read, which you already set to <i>Blob (anonymous read)</i>.)
+          After upload, the <b>Playback URL</b> will be filled automatically.
+          (Container access level must be <i>Blob (anonymous read access)</i>.)
         </div>
       </div>
 
@@ -182,7 +196,7 @@
   }
 
   function parseContainerInfo(containerSasUrl){
-    // Example: https://account.blob.core.windows.net/videos?<SAS>
+    // Example: https://<account>.blob.core.windows.net/videos?<SAS>
     try{
       const u = new URL(containerSasUrl);
       const account = u.hostname.split('.')[0];
@@ -195,26 +209,40 @@
     }
   }
 
-  async function uploadToBlobWithSas(file){
+  // PUT with progress (XMLHttpRequest so we can track upload progress)
+  function putWithProgress(url, file, headers = {}, onProgress = ()=>{}){
+    return new Promise((resolve, reject)=>{
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url, true);
+      Object.entries(headers).forEach(([k,v])=>xhr.setRequestHeader(k, v));
+      xhr.upload.onprogress = (evt)=>{
+        if (evt.lengthComputable){
+          const pct = Math.round((evt.loaded/evt.total)*100);
+          onProgress(pct);
+        }
+      };
+      xhr.onload = ()=> (xhr.status >= 200 && xhr.status < 300) ? resolve(xhr.responseText) : reject(new Error(`Blob upload failed: ${xhr.status} ${xhr.statusText}`));
+      xhr.onerror = ()=> reject(new Error("Network error during blob upload"));
+      xhr.send(file);
+    });
+  }
+
+  async function uploadToBlobWithSas(file, onProgress){
     const info = parseContainerInfo(containerSas);
     if (!info) throw new Error("Invalid container SAS URL.");
-    // We upload to: base + '/' + filename + SAS
-    const safeName = file.name.replace(/[^\w.\- ]+/g,'_'); // rudimentary cleanup
+    const safeName = Date.now() + "_" + file.name.replace(/[^\w.\- ]+/g,'_'); // prefix to avoid collisions
     const putUrl = `${info.base}/${encodeURIComponent(safeName)}${info.query}`;
-    const res = await fetch(putUrl, {
-      method: "PUT",
-      headers: {
+    await putWithProgress(
+      putUrl,
+      file,
+      {
         "x-ms-blob-type": "BlockBlob",
         "x-ms-version": "2021-12-02",
         "Content-Type": file.type || "application/octet-stream"
       },
-      body: file
-    });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Blob upload failed: ${res.status} ${res.statusText} — ${txt.slice(0,180)}`);
-    }
-    // The public (read) URL (no SAS needed because container is Public: Blob)
+      onProgress
+    );
+    // Public (read) URL (container must allow Blob anonymous read)
     return `${info.base}/${encodeURIComponent(safeName)}`;
   }
 
@@ -255,7 +283,7 @@
         status.textContent = `Save failed: ${res.status} ${res.statusText} — ${(txt||"").slice(0,180)}`;
         return;
       }
-      status.textContent = "Saved ✓";
+      status.textContent = "Saved ✓ (view it in All Videos)";
       // window.location.href = "/videos.html";
     }catch(e){
       status.textContent = "Save error: "+e.message;
@@ -276,18 +304,41 @@
     document.getElementById("formWrap").addEventListener("submit", submitForm);
 
     if (blobArea.style.display !== "none") {
+      const filePick   = document.getElementById("filePick");
       const blobStatus = document.getElementById("blobStatus");
+      const prog       = document.getElementById("prog");
+      const progWrap   = document.getElementById("progressWrap");
+      const progText   = document.getElementById("progText");
+
       document.getElementById("btnBlobUpload").addEventListener("click", async ()=>{
-        const file = document.getElementById("filePick").files?.[0];
+        const file = filePick.files?.[0];
         if (!file) { blobStatus.textContent = "Choose a file first."; return; }
+        if (!ME || ME.role !== "Creator"){ blobStatus.textContent = "Sign in as Creator to upload."; return; }
+
         try{
           blobStatus.textContent = "Uploading to Azure Blob…";
-          const url = await uploadToBlobWithSas(file);
+          progWrap.style.display = "flex";
+          prog.value = 0; progText.textContent = "0%";
+
+          const url = await uploadToBlobWithSas(file, (pct)=>{
+            prog.value = pct; progText.textContent = pct + "%";
+          });
+
           // Fill playback URL with the public blob URL
           document.getElementById("playbackUrl").value = url;
-          blobStatus.textContent = "Uploaded ✓";
+
+          // If title empty, prefill from filename (without extension)
+          const titleEl = document.getElementById("title");
+          if (!titleEl.value.trim()){
+            const base = (file.name || "").split('.').slice(0,-1).join('.') || file.name;
+            titleEl.value = base.replace(/[_\-]+/g,' ').trim();
+          }
+
+          blobStatus.textContent = "Uploaded ✓ (click Save to publish)";
         }catch(e){
           blobStatus.textContent = e.message;
+        }finally{
+          setTimeout(()=>{ progWrap.style.display = "none"; }, 800);
         }
       });
     }

@@ -15,7 +15,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const MONGO_URI =
   // process.env.MONGO_URI ||
-"mongodb://apivideoshare1-server:veu0NEXck7uYhFY5imAq6eCvyWeTHOVHBum9r9zNjnGAFLKY0wMF0HOhamFLNx1m72WrAY4K1mCuACDbeYgqmQ==@apivideoshare1-server.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retrywrites=false&maxIdleTimeMS=120000&appName=@apivideoshare1-server@";
+  "mongodb+srv://edutalkUser:MyPass123@edutalk-cluster.n8jlomv.mongodb.net/edutalk?retryWrites=true&w=majority&appName=edutalk-cluster";
+// "mongodb://apivideoshare1-server:veu0NEXck7uYhFY5imAq6eCvyWeTHOVHBum9r9zNjnGAFLKY0wMF0HOhamFLNx1m72WrAY4K1mCuACDbeYgqmQ==@apivideoshare1-server.mongo.cosmos.azure.com:10255/?ssl=true&replicaSet=globaldb&retrywrites=false&maxIdleTimeMS=120000&appName=@apivideoshare1-server@";
 // You can keep this for emergency creator access during transition (not used for role logic)
 const CREATOR_API_KEY = process.env.CREATOR_API_KEY || "";
 
